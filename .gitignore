@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.expo/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
