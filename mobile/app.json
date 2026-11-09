@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "StoryVerse AI",
+    "slug": "storyverse-ai",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.storyverse.ai"
+    }
+  }
+}
