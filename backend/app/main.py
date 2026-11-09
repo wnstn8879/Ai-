@@ -114,3 +114,25 @@ def resume_save(save_id:str):
         if s is None: raise HTTPException(404,"Save not found")
         parent=require_room(db,s.room_id)
         return branch(db,parent,s.message_index,parent.title+" · 이어하기")
+
+class TurnCreate(BaseModel):
+    actor: str = Field(default="나", min_length=1, max_length=120)
+    content: str = Field(min_length=1, max_length=5000)
+
+@app.post("/rooms/{room_id}/turns")
+async def play_turn(room_id: str, data: TurnCreate):
+    """Generate before committing both messages; provider failures do not save half a turn."""
+    from app.story_ai import generate_story
+    with Session() as db:
+        room = room_out(db, require_room(db, room_id))
+    reply = await generate_story(room, room["messages"], f"{data.actor}: {data.content}")
+    with Session.begin() as db:
+        require_room(db, room_id)
+        position = len(msgs(db, room_id))
+        user = Message(id=uid(), room_id=room_id, position=position,
+                       actor=data.actor, content=data.content, created_at=now())
+        ai = Message(id=uid(), room_id=room_id, position=position + 1,
+                     actor="AI", content=reply, created_at=now())
+        db.add_all([user, ai])
+        return {"user_message": {"id": user.id, "actor": user.actor, "content": user.content},
+                "ai_message": {"id": ai.id, "actor": ai.actor, "content": ai.content}}
