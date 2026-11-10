@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 
 *.db
+
+/mobile/android/
+/mobile/dist/
