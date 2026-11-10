@@ -3,9 +3,19 @@ import asyncio
 import hashlib
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
-from app.database import Base, Session, Room, Message, Save, SaveSnapshot, uid, now
+from app.database import (
+    Base,
+    Session,
+    Room,
+    Message,
+    Save,
+    SaveSnapshot,
+    SharedCheckpointRoster,
+    uid,
+    now,
+)
 from app.story_state import (
     snapshot_at,
     initial_state,
@@ -97,6 +107,7 @@ class ForkCreate(BaseModel):
 class SaveCreate(BaseModel):
     label: str = Field(default="저장 지점", min_length=1, max_length=100)
     message_index: int | None = Field(default=None, ge=0)
+    scope: str = Field(default="private", pattern="^(private|shared)$")
 
 
 @app.get("/health")
@@ -181,7 +192,9 @@ def add_message(
         return result
 
 
-def branch(db, parent, index, title, user_id, pinned=None):
+def branch(
+    db, parent, index, title, user_id, pinned=None, shared=False, shared_characters=None
+):
     lock_room(db, parent.id)
     require_room(db, parent.id, user_id)
     originals = msgs(db, parent.id)
@@ -192,7 +205,7 @@ def branch(db, parent, index, title, user_id, pinned=None):
         title=title,
         world_rules=parent.world_rules,
         characters_json=parent.characters_json,
-        mode="solo",
+        mode="multiplayer" if shared else "solo",
         parent_room_id=parent.id,
         fork_message_index=index,
         created_at=now(),
@@ -204,7 +217,24 @@ def branch(db, parent, index, title, user_id, pinned=None):
     child.characters_json = json.dumps(
         [c["name"] for c in restored_state["characters"]], ensure_ascii=False
     )
-    db.add(RoomMember(room_id=child.id, user_id=user_id, role="owner"))
+    if shared:
+        for member in db.scalars(
+            select(RoomMember).where(RoomMember.room_id == parent.id)
+        ):
+            db.add(
+                RoomMember(
+                    room_id=child.id,
+                    user_id=member.user_id,
+                    role=member.role,
+                    character=(
+                        shared_characters.get(member.user_id, "")
+                        if shared_characters is not None
+                        else member.character
+                    ),
+                )
+            )
+    else:
+        db.add(RoomMember(room_id=child.id, user_id=user_id, role="owner"))
     for i, m in enumerate(originals[:index]):
         db.add(
             Message(
@@ -237,6 +267,11 @@ def create_save(room_id: str, data: SaveCreate, user_id: str = Depends(current_u
     with Session.begin() as db:
         lock_room(db, room_id)
         require_room(db, room_id, user_id)
+        if data.scope == "shared":
+            if db.get(Room, room_id).mode != "multiplayer":
+                raise HTTPException(400, "Shared checkpoint requires multiplayer")
+            if db.get(RoomMember, (room_id, user_id)).role != "owner":
+                raise HTTPException(403, "Owner permission required")
         count = len(msgs(db, room_id))
         index = count if data.message_index is None else data.message_index
         if index > count:
@@ -245,12 +280,26 @@ def create_save(room_id: str, data: SaveCreate, user_id: str = Depends(current_u
             id=uid(),
             room_id=room_id,
             label=data.label,
+            scope=data.scope,
             message_index=index,
             created_at=now(),
         )
         db.add(s)
         db.flush()
         db.add(SaveOwner(save_id=s.id, user_id=user_id))
+        if data.scope == "shared":
+            bindings = {
+                m.user_id: m.character
+                for m in db.scalars(
+                    select(RoomMember).where(RoomMember.room_id == room_id)
+                )
+            }
+            db.add(
+                SharedCheckpointRoster(
+                    save_id=s.id,
+                    characters_json=json.dumps(bindings, ensure_ascii=False),
+                )
+            )
         db.add(
             SaveSnapshot(save_id=s.id, snapshot_id=snapshot_at(db, room_id, index).id)
         )
@@ -258,6 +307,7 @@ def create_save(room_id: str, data: SaveCreate, user_id: str = Depends(current_u
             "id": s.id,
             "room_id": room_id,
             "label": s.label,
+            "scope": s.scope,
             "message_index": index,
             "created_at": s.created_at,
         }
@@ -272,13 +322,17 @@ def list_saves(room_id: str, user_id: str = Depends(current_user)):
                 "id": s.id,
                 "room_id": s.room_id,
                 "label": s.label,
+                "scope": s.scope,
                 "message_index": s.message_index,
                 "created_at": s.created_at,
             }
             for s in db.scalars(
                 select(Save)
                 .join(SaveOwner, SaveOwner.save_id == Save.id)
-                .where(Save.room_id == room_id, SaveOwner.user_id == user_id)
+                .where(
+                    Save.room_id == room_id,
+                    or_(SaveOwner.user_id == user_id, Save.scope == "shared"),
+                )
                 .order_by(Save.created_at.desc())
             ).all()
         ]
@@ -291,7 +345,7 @@ def resume_save(save_id: str, user_id: str = Depends(current_user)):
         if (
             s is None
             or db.get(SaveOwner, save_id) is None
-            or db.get(SaveOwner, save_id).user_id != user_id
+            or (s.scope != "shared" and db.get(SaveOwner, save_id).user_id != user_id)
         ):
             raise HTTPException(404, "Save not found")
         parent = require_room(db, s.room_id, user_id)
@@ -375,6 +429,9 @@ app.include_router(security_router)
 from app.story_state import router as state_router
 
 app.include_router(state_router)
+from app.shared_restores import router as restore_router
+
+app.include_router(restore_router)
 
 
 def receipt(db, room_id, user_id, data):

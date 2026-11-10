@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import String, Text, ForeignKey, Integer, select, update, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
-from app.database import Base, Session, Room, uid, now
+from app.database import Base, Session, Room, RoomRoster, uid, now
 
 
 class User(Base):
@@ -384,6 +384,7 @@ def join(data: Join, user_id: str = Depends(current_user)):
             raise HTTPException(409, "Invitation already used")
         if db.get(RoomMember, (inv.room_id, user_id)) is None:
             db.add(RoomMember(room_id=inv.room_id, user_id=user_id, role="participant"))
+            bump_roster(db, inv.room_id)
         return {"room_id": inv.room_id}
 
 
@@ -421,6 +422,12 @@ def assign(
         member = db.get(RoomMember, (room_id, member_id))
         if member is None:
             raise HTTPException(404, "Member not found")
+        lock_room(db, room_id)
+        member = db.get(RoomMember, (room_id, member_id), populate_existing=True)
+        if member is None:
+            raise HTTPException(404, "Member not found")
+        if member.character != data.character:
+            bump_roster(db, room_id)
         member.character = data.character
     return {"ok": True}
 
@@ -436,6 +443,7 @@ def leave(room_id: str, user_id: str = Depends(current_user)):
             raise HTTPException(
                 409, "Owner cannot leave; ownership transfer is not implemented"
             )
+        bump_roster(db, room_id)
         db.delete(member)
     return {"ok": True}
 
@@ -487,3 +495,13 @@ def reserve_ai_attempt(room_id, user_id):
         ) or room_count >= int(os.getenv("AI_ROOM_DAILY_LIMIT", "300")):
             raise HTTPException(429, "Daily AI request allowance exceeded")
         db.add(AIUsage(id=uid(), user_id=user_id, room_id=room_id, day=day))
+
+
+def bump_roster(db, room_id):
+    """Call while holding the room write lock; re-entry must invalidate old consents."""
+    roster = db.get(RoomRoster, room_id)
+    if roster is None:
+        db.add(RoomRoster(room_id=room_id, generation=1))
+    else:
+        roster.generation += 1
+    db.flush()

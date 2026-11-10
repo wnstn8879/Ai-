@@ -21,7 +21,7 @@ def test_adopt_legacy_database_preserves_private_records(tmp_path):
         assert db.execute("SELECT count(*) FROM room_members").fetchone()[0] == 0
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "004_scene_snapshots"
+            == "005_shared_restores"
         )
 
 
@@ -39,7 +39,7 @@ def test_upgrade_existing_checkpoints_pins_legacy_world_state(tmp_path):
             "INSERT INTO messages VALUES ('message','room',0,'Knight','Keep my choice','2026-01-01')"
         )
         db.execute(
-            "INSERT INTO saves VALUES ('save','room','Old checkpoint',1,'2026-01-01')"
+            "INSERT INTO saves (id,room_id,label,message_index,created_at) VALUES ('save','room','Old checkpoint',1,'2026-01-01')"
         )
     subprocess.check_call([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
     import json
