@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
@@ -12,6 +11,7 @@ import {
   ActivityIndicator,
   AppState,
 } from "react-native";
+import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import SharedRestores from "./SharedRestores";
 import StoryStateEditor from "./StoryStateEditor";
@@ -28,6 +28,14 @@ import {
 } from "./api";
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StoryVerseApp />
+    </SafeAreaProvider>
+  );
+}
+
+function StoryVerseApp() {
   const [user, setUser] = useState(null),
     [ready, setReady] = useState(false),
     [register, setRegister] = useState(false);
@@ -359,7 +367,7 @@ export default function App() {
                 </Text>
               )}
               <StoryStateEditor
-                key={room.id}
+                key={"state:" + room.id}
                 room={room}
                 canEdit={owner}
                 busy={busy}
@@ -409,7 +417,7 @@ export default function App() {
               {btn("처음부터 개인 분기 만들기", () => fork(0), true)}
               {room.mode === "multiplayer" && (
                 <SharedRestores
-                  key={room.id}
+                  key={"shared:" + room.id}
                   room={room}
                   user={user}
                   owner={owner}
@@ -696,7 +704,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: "#0e1421",
-    paddingTop: Platform.OS === "android" ? 28 : 0,
   },
   body: { padding: 20, paddingBottom: 36, gap: 14 },
   brand: {

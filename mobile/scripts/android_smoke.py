@@ -157,6 +157,10 @@ def run(apk):
     hide_keyboard()
     tap("로그인", True)
     find(title, True, 60)
+    # A fresh process must restore its secure session without another login.
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("shell", "am", "start", "-n", PACKAGE + "/.MainActivity")
+    find(title, True, 90)
     tap("마지막 장면에서 이어하기", True)
     tap("행동이나 대사 입력", True)
     adb("shell", "input", "text", "AndroidNativeSmoke")
@@ -227,11 +231,15 @@ def run(apk):
         len(api("/rooms/" + rid, token=token)["messages"]) == saved["message_index"] + 1
     )
     assert len(api("/rooms/" + child["id"] + "/members", token=peer_token)) == 2
+    find(title + " · 공용 복원", True, 60)
     screenshot("02-restored-multiplayer-room")
+    metro = Path("/tmp/storyverse-metro.log").read_text()
+    assert "Encountered two children" not in metro, "Duplicate native component keys"
     report = {
         "result": "passed",
         "checks": [
             "native login",
+            "secure session restored after process restart",
             "story load",
             "keyboard and text input",
             "native participant message persisted",
