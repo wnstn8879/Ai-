@@ -7,18 +7,19 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         database: [sqlite, postgres]
     services:
       postgres:
-        image: postgres:17-alpine
+        image: ${{ matrix.database == 'postgres' && 'postgres:17-alpine' || '' }}
         env:
           POSTGRES_USER: storyverse_ci
           POSTGRES_PASSWORD: ci-only-not-production
           POSTGRES_DB: storyverse_ci
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U storyverse_ci'
+          --health-cmd "pg_isready -U storyverse_ci -d storyverse_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
     defaults:
       run:
