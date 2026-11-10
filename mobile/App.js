@@ -13,6 +13,7 @@ import {
   AppState,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import SharedRestores from "./SharedRestores";
 import StoryStateEditor from "./StoryStateEditor";
 import { connectLiveRoom } from "./liveRoom";
 import * as Crypto from "expo-crypto";
@@ -253,6 +254,9 @@ export default function App() {
     />
   );
   const owner = members.find((m) => m.user_id === user?.id)?.role === "owner";
+  const privateSaves = saves.filter(
+    (s) => (s.scope || "private") === "private",
+  );
   const shown = rooms.filter(
     (r) =>
       filter === "all" ||
@@ -389,12 +393,12 @@ export default function App() {
               <Text style={styles.heading}>나의 저장 지점</Text>
               {field(label, setLabel, "저장 이름")}
               {btn("현재 장면 저장", save)}
-              {saves.length === 0 && (
+              {privateSaves.length === 0 && (
                 <Text style={styles.muted}>
                   아직 수동 저장 지점이 없습니다. 메시지는 자동 저장됩니다.
                 </Text>
               )}
-              {saves.map((s) => (
+              {privateSaves.map((s) => (
                 <View style={styles.card} key={s.id}>
                   <Text style={styles.text}>
                     {s.label} · {s.message_index}번째 메시지
@@ -403,6 +407,18 @@ export default function App() {
                 </View>
               ))}
               {btn("처음부터 개인 분기 만들기", () => fork(0), true)}
+              {room.mode === "multiplayer" && (
+                <SharedRestores
+                  key={room.id}
+                  room={room}
+                  user={user}
+                  owner={owner}
+                  busy={busy}
+                  onAction={run}
+                  onOpenRoom={open}
+                  onResume={resume}
+                />
+              )}
               {room.mode === "multiplayer" && (
                 <>
                   <Text style={styles.heading}>참가자</Text>
