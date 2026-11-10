@@ -11,33 +11,40 @@
 - WebSocket 인증/재연결/DB 기록 복원, 메시지 위치 잠금과 고유 인덱스, 요청 ID로 저장 중복 방지, 멀티플레이 발언자 위조 차단.
 - 기존 AI 턴 유지, 실패 시 메시지 미저장, 오래된 생성 결과의 충돌 거부, 사용자/방별 일일 AI 시도 한도.
 - 다크 모드, 홈/보관함/친구/설정 탭, 키보드 대응과 로딩/오류/빈 상태, 저장 성공 표시.
+- 장면·중요 사실·캐릭터 성격/말투/목표/관계/상태/기억 편집과 변경 이력, 상태 버전 충돌 검사.
+- 체크포인트를 정확한 스냅샷에 고정하고 분기에 과거 상태 이력까지 복사. 같은 메시지 위치에서 나중에 설정을 바꿔도 저장 당시 상태로 복원.
+- AI 문맥에 편집한 상태와 기억을 포함하고 생성 중 상태가 바뀌면 응답 저장 차단. 모델의 실제 기억 준수율은 미검증.
+- 새로고침·저장 시 대사 초안 보존, 상태 편집 중 외부 변경 충돌 표시, 단일 WebSocket 재연결 컨트롤러.
+- 계정 전환/로그아웃 뒤 지연된 HTTP·토큰 갱신 응답 폐기, 이전 토큰의 늦은 401로 인한 불필요한 재갱신 방지.
 
 ## 2. 변경 파일
 
 - `backend/app/database.py`: 기존 SQLAlchemy 모델과 연결 설정 분리, SQLite 외래키 활성화.
 - `backend/app/security.py`: 계정·세션·친구·멤버십·초대·권한·AI 한도.
 - `backend/app/main.py`: 모든 스토리 API 인증/ACL, 최근 기록, 개인 저장/분기, 요청 영수증, WebSocket.
-- `backend/app/story_ai.py`: 기존 어댑터 보존, 코드 포맷 정리.
+- `backend/app/story_state.py`: 상태 스키마·편집 권한·이력·충돌 검사·상태 복사.
+- `backend/app/story_ai.py`: 기존 어댑터를 유지하며 캐릭터/장면/기억 문맥 추가.
 - `backend/migrations/`, `backend/alembic.ini`, `backend/requirements.txt`, `backend/.env.example`: 마이그레이션과 실행 설정.
 - `backend/tests/`: 기존 분기·AI·영속성 테스트를 인증 흐름에 연결, 권한/세션/동시성/WebSocket/마이그레이션/AI 한도 회귀 테스트.
 - `mobile/App.js`, `mobile/api.js`: 모바일 화면과 인증·자동 갱신·친구·초대·실시간 클라이언트.
-- `mobile/session.test.cjs`, `mobile/package.json`, `mobile/package-lock.json`: 세션 회귀 테스트와 호환 버전 고정.
+- `mobile/StoryStateEditor.js`, `mobile/liveRoom.js`: 상태 편집 화면과 단일 재연결 컨트롤러.
+- `mobile/session.test.cjs`, `mobile/liveRoom.test.cjs`, `mobile/package.json`, `mobile/package-lock.json`: 세션 회귀 테스트와 호환 버전 고정.
 - `mobile/app.json`, `mobile/eas.json`: Android 패키지·키보드·보안 저장·내부 APK/운영 AAB 프로필.
 - `.github/workflows/backend-tests.yml`, `.gitignore`, `README.md`, `docs/`: CI와 실행/보존/제한 문서.
 
 ## 3. DB 변경
 
-기존 `rooms`, `messages`, `saves`와 기록을 유지합니다. `users`, `user_sessions`, `room_members`, `save_owners`, `friendships`, `invitations`, `message_receipts`, `ai_usage`를 추가하고 외래키/검색 인덱스와 메시지 위치 고유 인덱스를 도입했습니다. 소유자가 불명인 과거 방은 그대로 보존하며 계정에 자동 배정하지 않습니다. 마이그레이션은 001→002→003 순서입니다.
+기존 `rooms`, `messages`, `saves`와 기록을 유지합니다. `users`, `user_sessions`, `room_members`, `save_owners`, `friendships`, `invitations`, `message_receipts`, `ai_usage`, `scene_states`, `save_snapshots`를 추가하고 외래키/검색 인덱스와 메시지 위치 고유 인덱스를 도입했습니다. 소유자가 불명인 과거 방은 그대로 보존하며 계정에 자동 배정하지 않습니다. 마이그레이션은 001→002→003→004 순서입니다. 004는 기존 세계관 규칙과 캐릭터 이름을 상태 버전 0으로 보존하고 기존 체크포인트에 연결합니다.
 
 ## 4. 테스트 결과
 
 - 변경 전 기준 코드: pytest **5개 통과**.
-- 최종 기능 검증: SQLite pytest **15개 통과**, 로컬 테스트 전용 PostgreSQL 17 pytest **15개 통과**.
-- 모바일 세션: Node 테스트 **4개 통과**. 동시 갱신, 갱신 폐기, 로그아웃/계정 전환, 네트워크 장애를 검증했습니다. 실제 OS SecureStore 대신 테스트 대역을 사용합니다.
+- 최종 기능 검증: SQLite pytest **23개 통과**, GitHub Actions PostgreSQL 17 pytest **23개 통과**.
+- 모바일 세션: Node 테스트 **12개 통과**. 동시/지연 갱신, 계정 변경 후 지연 응답, 깨진 세션, 네트워크 장애, 중복 WebSocket·재연결·중지·권한 상실을 검증했습니다. 실제 OS SecureStore 대신 테스트 대역을 사용합니다.
 - Expo 호환성 검사 통과. React Native를 Expo SDK 54에 맞는 0.81.5로 수정했습니다.
 - Android JS/Hermes 번들 생성 성공. 네이티브 프로젝트 prebuild 성공.
 - 초기 중복 메시지 테스트가 영수증 저장 누락을 발견했고 수정 후 통과했습니다. 최종 실패 테스트는 없습니다. FastAPI/Starlette의 TestClient 의존성 사용 중단 안내 경고가 1개 있습니다.
-- 새 CI는 SQLite/PostgreSQL, 모바일 세션, 호환성 검사, Android 번들 검증을 포함합니다. 원격 실행 결과는 PR에서 별도로 확인해야 합니다.
+- 기존 원격 CI는 PostgreSQL 상태 확인 명령의 따옴표 처리 오류로 테스트 시작 전에 실패했습니다. 명령을 수정하고 SQLite 작업에서는 컨테이너를 생략했으며 매트릭스 실패 전파도 해제했습니다. 수정 후 [GitHub Actions 실행 #11](https://github.com/wnstn8879/Ai-/actions/runs/42742302320)에서 SQLite·PostgreSQL·모바일 세 작업이 모두 성공했습니다.
 
 ## 5. Android와 외부 서비스
 
@@ -48,7 +55,7 @@ Android 네이티브 APK 빌드는 임시 프로젝트에서 `gradlew assembleDe
 ## 6. 아직 구현하지 않은 기능
 
 - 공용 체크포인트와 참가자 동의에 따른 공용 진행 되돌리기.
-- 메시지 시점별 동적 세계관·캐릭터 상태 스냅샷, 장기 사건/관계 메모리.
+- AI가 자동으로 사건을 추출·요약하고 장기 기억을 검색하는 기능. 현재 상태와 기억은 사용자가 명시적으로 편집합니다.
 - 사용자 사전 동의/방 설정에 따른 AI 캐릭터 대역.
 - 초대 링크/딥링크, 방장 위임, 강제 퇴장, 친구 삭제/차단.
 - 이메일 소유 확인, 비밀번호 찾기, 전체 기기 세션 관리, 운영용 공유 레이트리미터.
@@ -62,11 +69,11 @@ Android 네이티브 APK 빌드는 임시 프로젝트에서 `gradlew assembleDe
 
 기준: `develop/storyverse-foundation` → 작업: `feat/storyverse-auth-library-social`.
 
-변경은 기능별 커밋으로 기록하며 이 브랜치에서 기준 개발 브랜치로 PR을 생성합니다. 커밋·PR의 정확한 링크는 최종 작업 보고에 제공합니다. `main` 병합과 공개 배포는 수행하지 않습니다.
+[초안 PR #1](https://github.com/wnstn8879/Ai-/pull/1)에 변경을 반영했습니다. 추가 개선 코드 커밋은 `f134243`(상태 스냅샷), `2f77a75`(모바일 안정성), `924a529`(CI 수정)입니다. 기준 개발 브랜치로 검토하며 main으로 병합하지 않습니다. `main` 병합과 공개 배포는 수행하지 않습니다.
 
 ## 8. 다음 우선순위
 
-1. Android SDK/EAS 환경에서 APK 빌드 후 두 계정·두 기기 채팅/초대/재연결/키보드 QA.
-2. 세계관/캐릭터 상태 버전과 체크포인트 스냅샷, 공용 저장·동의 절차.
+1. Android SDK/EAS 환경에서 APK 빌드 후 두 계정·두 기기 채팅/상태 편집/재연결/키보드 QA.
+2. 공용 저장·동의 절차, 앱 종료에도 보존되는 초안과 전송 큐.
 3. 이메일 확인/복구와 공유 제한, 전체 세션 관리, 운영 로그·보존·부하 검증.
 4. 실제 AI 연결·장기 메모리·요청 큐·토큰별 비용 관리, 동의 기반 대역.
