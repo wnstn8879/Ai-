@@ -1,9 +1,33 @@
-# Persistence and restore
+# 저장, 접근 권한과 마이그레이션
 
-Set `DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME` for PostgreSQL. For local development without PostgreSQL, the server uses `sqlite:///./storyverse.db`. Never commit credentials.
+## 기존 데이터 보존
 
-Run: `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload`.
+서버를 중지하고 SQLite DB 파일 또는 PostgreSQL 백업을 보관한 뒤 `backend`에서 `alembic upgrade head`를 실행합니다. 앱 import 시 자동 테이블 생성은 제거했습니다. 신규 설치도 먼저 마이그레이션해야 합니다.
 
-Mobile: `cd mobile && npm install && EXPO_PUBLIC_API_URL=http://YOUR_LAN_IP:8000 npm start`. Android emulator can use `http://10.0.2.2:8000`. A physical phone needs a reachable HTTPS endpoint or local LAN address.
+- `001_legacy`: 기존 `rooms`, `messages`, `saves`가 있으면 그대로 채택하고 없는 테이블만 생성합니다.
+- `002_identity`: 사용자, 세션, 멤버십, 개인 저장 ACL, 친구, 초대, 메시지 요청 영수증, AI 요청 횟수 테이블을 추가합니다.
+- `003_message_order`: `(room_id, position)` 고유 인덱스를 추가합니다. 과거 중복 위치가 있으면 자동 삭제하거나 번호를 변경하지 않고 실패합니다. 해당 DB를 백업하고 명시적인 정리 계획을 세워야 합니다.
 
-Each message is written to the database immediately. Manual checkpoints reference immutable message positions. Restoring always creates a separate branch and leaves the original room untouched. This is not yet production-ready: authentication, room membership permissions, database migrations, real-time multiplayer, background/offline queueing, and AI-generated world-state snapshots are not implemented. Do not expose this API publicly without authentication and authorization.
+첫 두 마이그레이션은 데이터를 지울 수 있는 downgrade를 차단합니다. 스키마 변경 전 백업으로 복원하는 절차를 사용하세요. 마이그레이션 파일의 스키마는 고정되어 있으며 실행 시 최신 ORM 모델에 의존하지 않습니다.
+
+무인증 시절 방·저장 지점의 실제 소유자는 기록되어 있지 않습니다. 새 계정에 자동 배정하지 않으며, 계정으로 접근할 수 없어도 원본은 남습니다. 기존 데이터 복구가 필요하면 운영자가 소유권 증빙과 백업을 확인한 후 `room_members`에 소유자와 `save_owners`에 저장 소유자를 명시적으로 연결해야 합니다. 앱에는 누구나 방을 탈취할 수 있는 claim API가 없습니다.
+
+## 방과 개인 저장
+
+방 생성자는 owner, 초대 코드로 참여한 사용자는 participant입니다. 방의 모든 조회·메시지·AI·저장·분기 API에 멤버십을 검사합니다. 저장 지점은 **개인용**이며 다른 참가자에게 표시되지 않습니다. 소유자 본인이라도 방에서 나가면 기존 공용 방 저장 지점으로 접근할 수 없으며, 다시 초대받아 참여하면 자신의 저장 지점을 다시 조회할 수 있습니다.
+
+메시지는 추가만 가능하며 현재 API에는 기존 메시지 삭제·수정이 없습니다. 저장 지점의 `message_index`는 포함할 메시지 개수입니다(0은 시작 장면). 복원과 분기는 새로운 solo 방을 만들고 메시지를 복사합니다. 원본·원본 참가자·원본 저장 기록은 변경하지 않습니다. 부모 ID와 분기 위치를 보존하므로 보관함에서 관계를 확인할 수 있습니다. 세계관/캐릭터는 현재 정적인 방 설정을 복사하며, 동적 상태 스냅샷은 아직 없습니다.
+
+## 동시성과 재연결
+
+DB 방 행에 쓰기 잠금을 걸어 메시지 위치를 할당하고, 고유 인덱스로 충돌을 방지합니다. 클라이언트가 `request_id`를 보내면 같은 사용자의 같은 방에 동일 요청을 재전송해도 기존 결과를 반환합니다. 다른 본문이나 다른 메시지 API에 같은 ID를 재사용하면 409입니다. 모바일은 전송 실패 시 같은 내용의 재시도 ID를 유지하지만 앱 종료까지 보존하는 오프라인 전송 큐는 아직 없습니다.
+
+AI는 트랜잭션 밖에서 호출하고, 저장 전에 최신 메시지 개수를 검사합니다. 생성 중 새 메시지가 들어오면 409를 반환하고 사용자/AI 메시지 모두 저장하지 않습니다. 완료된 AI 턴 재시도는 기존 응답을 반환합니다. 동시에 들어온 미완료 동일 요청이 모델을 한 번만 호출하도록 보장하는 작업 큐는 아직 없습니다. 일일 요청 한도는 DB 잠금으로 사용자별·방별 시도 횟수를 제한합니다. 실패/충돌한 모델 시도도 한도에 포함하며 실제 토큰 비용 정산은 아닙니다.
+
+WebSocket은 연결 직후 JSON 프레임 `{ "access_token": "..." }`으로 인증합니다. URL에 토큰을 넣지 않습니다. 메시지 전송은 HTTP API로 하고, WebSocket은 DB를 주기적으로 확인해 순서가 정해진 전체 스냅샷을 전달합니다. 프로세스별 메모리 브로드캐스트에 의존하지 않으므로 재시작·다중 워커에도 저장된 기록을 재전달합니다. 매 갱신에 세션 만료/폐기와 멤버십을 재검사합니다. 대규모 서비스에는 증분 이벤트·페이지네이션·브로커와 연결 수 제한이 추가로 필요합니다.
+
+## 세션과 운영 경계
+
+비밀번호는 scrypt(N=32768, r=8, p=3), 무작위 salt로 해싱합니다. 접근/갱신 토큰과 초대 코드는 SHA-256 해시만 DB에 보관합니다. 접근 토큰 15분, 갱신 토큰 30일이며 갱신 시 기존 세션을 원자적으로 폐기합니다. 로그아웃은 현재 세션을 폐기합니다. 모바일은 SecureStore에 세션을 저장하고 갱신을 단일 요청으로 합칩니다. 네트워크 오류는 세션을 지우지 않고, 만료된 갱신 토큰은 로그인 화면으로 돌아갑니다.
+
+인증 요청에는 프로세스 단위 IP 제한(분당 30회)을 적용했습니다. 다중 워커에서는 공통 프록시/Redis 기반 제한이 필요하며 신뢰 프록시 설정과 함께 검증해야 합니다. 만료 세션·사용 완료 초대·요청 영수증의 운영 정리 정책도 추가해야 합니다. 서버와 DB는 운영 HTTPS/TLS·백업·비밀 관리 설정을 별도로 준비해야 합니다.
