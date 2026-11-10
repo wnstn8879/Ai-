@@ -2,10 +2,17 @@ import json
 import asyncio
 import hashlib
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 
-from app.database import Base, Session, Room, Message, Save, uid, now
+from app.database import Base, Session, Room, Message, Save, SaveSnapshot, uid, now
+from app.story_state import (
+    snapshot_at,
+    initial_state,
+    add_snapshot,
+    copy_history,
+    StoryState,
+)
 
 app = FastAPI(title="StoryVerse AI API", version="0.3.0")
 from app.security import (
@@ -34,11 +41,15 @@ def msgs(db, room_id):
 def room_out(db, room):
     import json
 
+    snapshot = snapshot_at(db, room.id)
+    state = json.loads(snapshot.state_json)
     return {
         "id": room.id,
         "title": room.title,
-        "world_rules": room.world_rules,
-        "characters": json.loads(room.characters_json),
+        "world_rules": state["world_rules"],
+        "characters": [c["name"] for c in state["characters"]],
+        "story_state": state,
+        "state_revision": snapshot.revision,
         "mode": room.mode,
         "parent_room_id": room.parent_room_id,
         "fork_message_index": room.fork_message_index,
@@ -61,6 +72,15 @@ class RoomCreate(BaseModel):
     world_rules: str = Field(min_length=1, max_length=20000)
     characters: list[str] = Field(default_factory=list, max_length=30)
     mode: str = Field(default="solo", pattern="^(solo|multiplayer)$")
+
+    @model_validator(mode="after")
+    def valid_initial_state(self):
+        validated = StoryState.model_validate(
+            initial_state(self.world_rules, self.characters)
+        )
+        self.world_rules = validated.world_rules
+        self.characters = [c.name for c in validated.characters]
+        return self
 
 
 class MessageCreate(BaseModel):
@@ -114,6 +134,7 @@ def create_room(data: RoomCreate, user_id: str = Depends(current_user)):
         )
         db.add(r)
         db.flush()
+        add_snapshot(db, r.id, 0, initial_state(data.world_rules, data.characters), 0)
         db.add(RoomMember(room_id=r.id, user_id=user_id, role="owner"))
         db.flush()
         return room_out(db, r)
@@ -160,7 +181,7 @@ def add_message(
         return result
 
 
-def branch(db, parent, index, title, user_id):
+def branch(db, parent, index, title, user_id, pinned=None):
     lock_room(db, parent.id)
     require_room(db, parent.id, user_id)
     originals = msgs(db, parent.id)
@@ -178,6 +199,11 @@ def branch(db, parent, index, title, user_id):
     )
     db.add(child)
     db.flush()
+    restored_state = copy_history(db, parent.id, child.id, index, pinned)
+    child.world_rules = restored_state["world_rules"]
+    child.characters_json = json.dumps(
+        [c["name"] for c in restored_state["characters"]], ensure_ascii=False
+    )
     db.add(RoomMember(room_id=child.id, user_id=user_id, role="owner"))
     for i, m in enumerate(originals[:index]):
         db.add(
@@ -225,6 +251,9 @@ def create_save(room_id: str, data: SaveCreate, user_id: str = Depends(current_u
         db.add(s)
         db.flush()
         db.add(SaveOwner(save_id=s.id, user_id=user_id))
+        db.add(
+            SaveSnapshot(save_id=s.id, snapshot_id=snapshot_at(db, room_id, index).id)
+        )
         return {
             "id": s.id,
             "room_id": room_id,
@@ -267,7 +296,12 @@ def resume_save(save_id: str, user_id: str = Depends(current_user)):
             raise HTTPException(404, "Save not found")
         parent = require_room(db, s.room_id, user_id)
         return branch(
-            db, parent, s.message_index, parent.title + " · 이어하기", user_id
+            db,
+            parent,
+            s.message_index,
+            parent.title[:112] + " · 이어하기",
+            user_id,
+            pinned=db.get(SaveSnapshot, s.id).snapshot_id,
         )
 
 
@@ -299,7 +333,10 @@ async def play_turn(
         cached = receipt(db, room_id, user_id, data)
         if cached is not None:
             return cached
-        if len(msgs(db, room_id)) != len(room["messages"]):
+        if (
+            len(msgs(db, room_id)) != len(room["messages"])
+            or snapshot_at(db, room_id).revision != room["state_revision"]
+        ):
             raise HTTPException(409, "Story changed; reload before retrying")
         position = len(msgs(db, room_id))
         user = Message(
@@ -335,6 +372,9 @@ async def play_turn(
 from app.security import router as security_router
 
 app.include_router(security_router)
+from app.story_state import router as state_router
+
+app.include_router(state_router)
 
 
 def receipt(db, room_id, user_id, data):
@@ -399,8 +439,8 @@ async def live_room(socket: WebSocket, room_id: str):
                 await asyncio.wait_for(socket.receive_text(), timeout=1)
             except asyncio.TimeoutError:
                 pass
-    except HTTPException:
-        await socket.close(code=4401)
+    except HTTPException as exc:
+        await socket.close(code=4403 if exc.status_code in (403, 404) else 4401)
     except (asyncio.TimeoutError, ValueError, TypeError, AttributeError):
         await socket.close(code=4400)
     except WebSocketDisconnect:

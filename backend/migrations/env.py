@@ -1,6 +1,7 @@
 from alembic import context
 from app.database import Base, engine
 import app.security
+import app.story_state
 
 with engine.connect() as connection:
     context.configure(

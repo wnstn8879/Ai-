@@ -75,3 +75,24 @@ if DATABASE_URL.startswith("sqlite"):
     @event.listens_for(engine, "connect")
     def sqlite_integrity(connection, _):
         connection.execute("PRAGMA foreign_keys=ON")
+
+
+class SceneState(Base):
+    """Append-only world/character state at a message boundary."""
+
+    __tablename__ = "scene_states"
+    __table_args__ = (
+        Index("uq_scene_room_revision", "room_id", "revision", unique=True),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    message_index: Mapped[int] = mapped_column(Integer)
+    state_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40))
+
+
+class SaveSnapshot(Base):
+    __tablename__ = "save_snapshots"
+    save_id: Mapped[str] = mapped_column(ForeignKey("saves.id"), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey("scene_states.id"), index=True)
