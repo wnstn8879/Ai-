@@ -428,6 +428,7 @@ def assign(
 @router.post("/rooms/{room_id}/leave")
 def leave(room_id: str, user_id: str = Depends(current_user)):
     with Session.begin() as db:
+        lock_room(db, room_id)
         member = db.get(RoomMember, (room_id, user_id))
         if member is None:
             raise HTTPException(404, "Room not found")

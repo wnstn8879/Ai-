@@ -8,7 +8,4 @@ __pycache__/
 .venv/
 *.pyc
 
-.venv/
-node_modules/
-.expo/
 *.db

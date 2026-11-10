@@ -122,6 +122,7 @@ def create_room(data: RoomCreate, user_id: str = Depends(current_user)):
 @app.get("/rooms/{room_id}")
 def get_room(room_id: str, user_id: str = Depends(current_user)):
     with Session.begin() as db:
+        lock_room(db, room_id)
         room = require_room(db, room_id, user_id)
         db.get(RoomMember, (room_id, user_id)).last_played_at = now()
         return room_out(db, room)
@@ -132,8 +133,8 @@ def add_message(
     room_id: str, data: MessageCreate, user_id: str = Depends(current_user)
 ):
     with Session.begin() as db:
-        require_room(db, room_id, user_id)
         lock_room(db, room_id)
+        require_room(db, room_id, user_id)
         cached = receipt(db, room_id, user_id, data)
         if cached is not None:
             return cached
@@ -160,6 +161,8 @@ def add_message(
 
 
 def branch(db, parent, index, title, user_id):
+    lock_room(db, parent.id)
+    require_room(db, parent.id, user_id)
     originals = msgs(db, parent.id)
     if index > len(originals):
         raise HTTPException(400, "Invalid fork point")
@@ -206,6 +209,7 @@ def fork_room(room_id: str, data: ForkCreate, user_id: str = Depends(current_use
 @app.post("/rooms/{room_id}/saves")
 def create_save(room_id: str, data: SaveCreate, user_id: str = Depends(current_user)):
     with Session.begin() as db:
+        lock_room(db, room_id)
         require_room(db, room_id, user_id)
         count = len(msgs(db, room_id))
         index = count if data.message_index is None else data.message_index
@@ -290,8 +294,8 @@ async def play_turn(
     reserve_ai_attempt(room_id, user_id)
     reply = await generate_story(room, room["messages"], f"{actor}: {data.content}")
     with Session.begin() as db:
-        require_room(db, room_id, user_id)
         lock_room(db, room_id)
+        require_room(db, room_id, user_id)
         cached = receipt(db, room_id, user_id, data)
         if cached is not None:
             return cached
