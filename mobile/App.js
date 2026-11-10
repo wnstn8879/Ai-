@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   View,
-  Alert,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +13,8 @@ import {
   AppState,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import StoryStateEditor from "./StoryStateEditor";
+import { connectLiveRoom } from "./liveRoom";
 import * as Crypto from "expo-crypto";
 import {
   API,
@@ -74,15 +75,17 @@ export default function App() {
     pending.current = null;
   };
   const run = async (fn) => {
-    if (busyRef.current) return;
+    if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await fn();
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -99,8 +102,10 @@ export default function App() {
     setSaves(s);
     setMembers(m);
     setInviteCode("");
-    setInput("");
-    pending.current = null;
+    if (room?.id !== id) {
+      setInput("");
+      pending.current = null;
+    }
   };
   useEffect(() => {
     onExpired(reset);
@@ -115,73 +120,44 @@ export default function App() {
   useEffect(() => {
     if (user) run(refresh);
   }, [user?.id]);
-  // Database snapshots are authoritative and ordered; reconnect loads the full persisted story.
+  // One controller owns reconnects and ignores callbacks from replaced connections.
   useEffect(() => {
     if (!room || !user || room.mode !== "multiplayer") return;
-    let stopped = false,
-      socket,
-      timer,
-      attempt = 0;
-    const connect = async () => {
-      try {
+    const controller = connectLiveRoom({
+      url: API.replace(/^http/, "ws") + "/rooms/" + room.id + "/live",
+      getToken: async () => {
         await request("/auth/me");
-        const token = await accessToken();
-        if (stopped) return;
-        socket = new WebSocket(
-          API.replace(/^http/, "ws") + "/rooms/" + room.id + "/live",
-        );
-        socket.onopen = () => {
-          if (stopped) {
-            socket.close();
-            return;
-          }
-          socket.send(JSON.stringify({ access_token: token }));
-          setLive("실시간 연결됨");
-          attempt = 0;
-        };
-        socket.onmessage = (event) => {
-          if (stopped) return;
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === "snapshot") setRoom(data.room);
-          } catch {
-            setLive("동기화 오류");
-          }
-        };
-        socket.onerror = () => {
-          if (!stopped) setLive("연결 끊김 · 재연결 중");
-        };
-        socket.onclose = () => {
-          if (!stopped) {
-            setLive("연결 끊김 · 재연결 중");
-            timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempt++));
-          }
-        };
-      } catch {
-        if (!stopped) {
-          setLive("연결 확인 필요");
-          timer = setTimeout(connect, 5000);
-        }
-      }
-    };
-    connect();
+        return accessToken();
+      },
+      onSnapshot: (snapshot) =>
+        setRoom((current) =>
+          current?.id === snapshot.id ? snapshot : current,
+        ),
+      onStatus: setLive,
+      onDenied: () => {
+        setRoom(null);
+        setMembers([]);
+        setSaves([]);
+        setError("이 방의 참여 권한이 없습니다.");
+      },
+    });
     const subscription = AppState.addEventListener("change", (state) => {
-      if (
-        state === "active" &&
-        !stopped &&
-        (!socket || socket.readyState === 3)
-      ) {
-        clearTimeout(timer);
-        connect();
-      }
+      if (state === "active") controller.resume();
     });
     return () => {
-      stopped = true;
-      clearTimeout(timer);
       subscription.remove();
-      socket?.close();
+      controller.stop();
     };
   }, [room?.id, user?.id]);
+  const saveStoryState = (base_revision, state) =>
+    run(async () => {
+      await request("/rooms/" + room.id + "/state", "PUT", {
+        base_revision,
+        state,
+      });
+      await open(room.id);
+      setNotice("세계관과 캐릭터 상태를 저장했습니다.");
+    });
   const create = () =>
     run(async () => {
       const r = await request("/rooms", "POST", {
@@ -378,6 +354,13 @@ export default function App() {
                   평행세계 · 부모 스토리 {room.parent_room_id}
                 </Text>
               )}
+              <StoryStateEditor
+                key={room.id}
+                room={room}
+                canEdit={owner}
+                busy={busy}
+                onSave={saveStoryState}
+              />
               {room.messages.length === 0 && (
                 <Text style={styles.muted}>
                   첫 행동이나 대사로 이야기를 시작하세요.

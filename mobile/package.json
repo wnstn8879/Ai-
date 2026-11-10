@@ -8,7 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "check": "expo export --platform android",
-    "test": "node --test session.test.cjs"
+    "test": "node --test *.test.cjs"
   },
   "dependencies": {
     "expo": "~54.0.0",

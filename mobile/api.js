@@ -4,6 +4,21 @@ const KEY = "storyverse.session.v1";
 let session = null;
 let refreshPromise = null;
 let expired = () => {};
+let generation = 0;
+let storageQueue = Promise.resolve();
+const sessionChanged = () =>
+  Object.assign(
+    new Error("계정이 변경되었습니다. 현재 계정에서 다시 시도해주세요."),
+    { code: "SESSION_CHANGED" },
+  );
+function assertGeneration(expected) {
+  if (expected !== generation || !session) throw sessionChanged();
+}
+function storage(action) {
+  const next = storageQueue.then(action);
+  storageQueue = next.catch(() => {});
+  return next;
+}
 export function onExpired(callback) {
   expired = callback;
 }
@@ -55,29 +70,58 @@ async function raw(path, method = "GET", body, token) {
     clearTimeout(timeout);
   }
 }
-async function persist(value) {
-  await SecureStore.setItemAsync(KEY, JSON.stringify(value));
+function validSession(value) {
+  return (
+    value &&
+    typeof value.access_token === "string" &&
+    value.access_token.length > 0 &&
+    typeof value.refresh_token === "string" &&
+    value.refresh_token.length > 0 &&
+    typeof value.user?.id === "string"
+  );
+}
+async function persist(value, expected) {
+  if (!validSession(value))
+    throw new Error("로그인 정보를 확인할 수 없습니다.");
+  await storage(async () => {
+    if (expected !== generation) throw sessionChanged();
+    await SecureStore.setItemAsync(KEY, JSON.stringify(value));
+  });
+  if (expected !== generation) throw sessionChanged();
   session = value;
   return value;
 }
 export async function clearSession() {
+  const own = ++generation;
   session = null;
-  await SecureStore.deleteItemAsync(KEY);
+  refreshPromise = null;
+  await storage(() => SecureStore.deleteItemAsync(KEY));
+  return own;
 }
 export async function restoreSession() {
-  const saved = await SecureStore.getItemAsync(KEY);
+  const expected = generation;
+  const saved = await storage(() => SecureStore.getItemAsync(KEY));
+  if (expected !== generation) throw sessionChanged();
   if (!saved) return null;
+  let parsed;
   try {
-    session = JSON.parse(saved);
+    parsed = JSON.parse(saved);
   } catch {
+    parsed = null;
+  }
+  if (!validSession(parsed)) {
     await clearSession();
     return null;
   }
-  return session;
+  session = parsed;
+  return parsed;
 }
 export async function authenticate(register, body) {
+  const expected = await clearSession();
+  if (expected !== generation) throw sessionChanged();
   return persist(
     await raw(register ? "/auth/register" : "/auth/login", "POST", body),
+    expected,
   );
 }
 export async function accessToken() {
@@ -85,38 +129,58 @@ export async function accessToken() {
   return session.access_token;
 }
 async function refresh() {
-  if (!refreshPromise) {
-    refreshPromise = (async () => {
-      if (!session) throw new Error("로그인이 필요합니다.");
-      try {
-        return await persist(
-          await raw("/auth/refresh", "POST", {
-            refresh_token: session.refresh_token,
-          }),
-        );
-      } catch (e) {
-        if (e.status === 401) {
+  if (refreshPromise) return refreshPromise;
+  const expected = generation;
+  const source = session;
+  if (!source) throw new Error("로그인이 필요합니다.");
+  const task = (async () => {
+    try {
+      return await persist(
+        await raw("/auth/refresh", "POST", {
+          refresh_token: source.refresh_token,
+        }),
+        expected,
+      );
+    } catch (e) {
+      if (
+        e.status === 401 &&
+        expected === generation &&
+        session?.refresh_token === source.refresh_token
+      ) {
+        try {
           await clearSession();
+        } finally {
           expired();
         }
-        throw e;
       }
-    })().finally(() => {
-      refreshPromise = null;
-    });
-  }
-  return refreshPromise;
+      throw e;
+    }
+  })().finally(() => {
+    if (refreshPromise === task) refreshPromise = null;
+  });
+  refreshPromise = task;
+  return task;
 }
 export async function request(path, method = "GET", body) {
+  const expected = generation;
+  const original = await accessToken();
   try {
-    return await raw(path, method, body, await accessToken());
+    const result = await raw(path, method, body, original);
+    assertGeneration(expected);
+    return result;
   } catch (e) {
+    assertGeneration(expected);
     if (e.status !== 401) throw e;
-    await refresh();
-    return raw(path, method, body, await accessToken());
+    // A late 401 from the previous token must not rotate a fresh token again.
+    if (session.access_token === original) await refresh();
+    assertGeneration(expected);
+    const result = await raw(path, method, body, await accessToken());
+    assertGeneration(expected);
+    return result;
   }
 }
 export async function logout() {
+  const expected = generation;
   await request("/auth/logout", "POST");
-  await clearSession();
+  if (expected === generation) await clearSession();
 }

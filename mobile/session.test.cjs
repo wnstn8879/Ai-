@@ -118,3 +118,86 @@ test("network failure preserves recoverable session", async () => {
   await assert.rejects(api.request("/rooms"));
   assert.equal(storage.size, 1);
 });
+
+test("late unauthorized response reuses refreshed token without a second rotation", async () => {
+  let finishLate,
+    refreshes = 0;
+  const { api } = harness(async (path, options) => {
+    if (path === "/auth/refresh") {
+      refreshes++;
+      return { status: 200, body: renewed };
+    }
+    if (options.headers.Authorization === "Bearer new-access")
+      return { status: 200, body: ["fresh"] };
+    if (path === "/late")
+      return new Promise(
+        (resolve) => (finishLate = () => resolve({ status: 401, body: {} })),
+      );
+    return { status: 401, body: {} };
+  }, old);
+  await api.restoreSession();
+  const late = api.request("/late");
+  await new Promise((r) => setImmediate(r));
+  await api.request("/first");
+  finishLate();
+  assert.equal((await late)[0], "fresh");
+  assert.equal(refreshes, 1);
+});
+test("refresh finishing after session clear cannot restore the old account", async () => {
+  let finish;
+  const { api, storage } = harness(
+    async (path) =>
+      path === "/auth/refresh"
+        ? new Promise(
+            (resolve) =>
+              (finish = () => resolve({ status: 200, body: renewed })),
+          )
+        : { status: 401, body: {} },
+    old,
+  );
+  await api.restoreSession();
+  const request = api.request("/rooms");
+  await new Promise((r) => setImmediate(r));
+  await api.clearSession();
+  finish();
+  await assert.rejects(request);
+  assert.equal(storage.size, 0);
+  await assert.rejects(api.accessToken());
+});
+test("a response from the previous account is rejected after a new login", async () => {
+  let finish;
+  const bob = {
+    access_token: "bob",
+    refresh_token: "bob-refresh",
+    user: { id: "bob" },
+  };
+  const { api, storage } = harness(
+    async (path) =>
+      path === "/auth/login"
+        ? { status: 200, body: bob }
+        : new Promise(
+            (resolve) =>
+              (finish = () =>
+                resolve({ status: 200, body: ["alice-private-story"] })),
+          ),
+    old,
+  );
+  await api.restoreSession();
+  const previous = api.request("/rooms");
+  await new Promise((r) => setImmediate(r));
+  await api.authenticate(false, {
+    email: "bob@example.com",
+    password: "password",
+  });
+  finish();
+  await assert.rejects(previous, (error) => error.code === "SESSION_CHANGED");
+  assert.equal(await api.accessToken(), "bob");
+  assert.equal(JSON.parse(storage.get("storyverse.session.v1")).user.id, "bob");
+});
+test("malformed saved session is discarded instead of displaying a broken login", async () => {
+  const { api, storage } = harness(async () => ({ status: 200, body: {} }), {
+    user: { id: "alice" },
+  });
+  assert.equal(await api.restoreSession(), null);
+  assert.equal(storage.size, 0);
+});
