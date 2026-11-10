@@ -1,7 +1,9 @@
 """Server-side story generation. Never expose OPENAI_API_KEY to the mobile app."""
+
 import os
 import httpx
 from fastapi import HTTPException
+
 
 async def generate_story(room, messages, instruction):
     key = os.getenv("OPENAI_API_KEY")
@@ -15,15 +17,30 @@ async def generate_story(room, messages, instruction):
         "Never decide the human player's actions. Keep replies concise, vivid, and safe. "
         f"Story: {room['title']}\nWorld rules: {room['world_rules']}\nCharacters: {characters}"
     )
-    history = [{"role": "assistant" if m["actor"] == "AI" else "user",
-                "content": f"{m['actor']}: {m['content']}"} for m in messages[-30:]]
-    payload = {"model": model, "messages": [{"role": "system", "content": system}, *history,
-                                             {"role": "user", "content": instruction}],
-               "temperature": 0.8, "max_tokens": 500}
+    history = [
+        {
+            "role": "assistant" if m["actor"] == "AI" else "user",
+            "content": f"{m['actor']}: {m['content']}",
+        }
+        for m in messages[-30:]
+    ]
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            *history,
+            {"role": "user", "content": instruction},
+        ],
+        "temperature": 0.8,
+        "max_tokens": 500,
+    }
     try:
         async with httpx.AsyncClient(timeout=40) as client:
-            response = await client.post("https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {key}"}, json=payload)
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json=payload,
+            )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip():
