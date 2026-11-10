@@ -53,3 +53,80 @@ jobs:
       - run: npx expo install --check
       - run: npm test
       - run: npm run check
+  android-native:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_API_URL: http://10.0.2.2:8000
+      DATABASE_URL: sqlite:////tmp/storyverse-android-qa.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build Android debug APK
+        run: ./android/gradlew -p android assembleDebug --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storyverse-android-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Start isolated QA backend and Metro
+        run: |
+          python -m pip install -r ../backend/requirements.txt
+          (
+            cd ../backend
+            python -m alembic upgrade head
+            nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 >/tmp/storyverse-qa-api.log 2>&1 &
+          )
+          nohup npx expo start --localhost --port 8081 >/tmp/storyverse-metro.log 2>&1 &
+          python - <<'PY'
+          import time
+          from urllib.request import urlopen
+          for port,path in [(8000,'/health'),(8081,'/status')]:
+              for attempt in range(60):
+                  try:
+                      with urlopen(f'http://127.0.0.1:{port}{path}',timeout=2) as response:
+                          if response.status==200:break
+                  except Exception:pass
+                  time.sleep(1)
+              else:raise RuntimeError(f'QA service on port {port} did not start')
+          PY
+      - name: Enable emulator acceleration
+        run: sudo chmod a+rw /dev/kvm
+      - name: Native Android emulator QA
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: python mobile/scripts/android_smoke.py mobile/android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storyverse-android-qa-evidence
+          path: |
+            /tmp/storyverse-android-qa/
+            /tmp/storyverse-qa-api.log
+            /tmp/storyverse-metro.log
