@@ -4,9 +4,11 @@
     "slug": "storyverse-ai",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "android": {
-      "package": "com.storyverse.ai"
-    }
+      "package": "com.storyverse.ai",
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "plugins": ["expo-secure-store"]
   }
 }
