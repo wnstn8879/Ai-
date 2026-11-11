@@ -201,3 +201,19 @@ test("malformed saved session is discarded instead of displaying a broken login"
   assert.equal(await api.restoreSession(), null);
   assert.equal(storage.size, 0);
 });
+
+test("queued request for a previous account is rejected before any HTTP call", async () => {
+  let calls = 0;
+  const { api } = harness(async () => {
+    calls++;
+    return { status: 200, body: {} };
+  }, old);
+  await api.restoreSession();
+  await assert.rejects(
+    api.requestForUser("bob", "/rooms/room/messages", "POST", {
+      content: "Private",
+    }),
+    (e) => e.code === "SESSION_CHANGED",
+  );
+  assert.equal(calls, 0);
+});

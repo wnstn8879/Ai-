@@ -13,6 +13,8 @@ import {
 } from "react-native";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import OutboxPanel from "./OutboxPanel";
+import { useOutbox, useRoomDraft } from "./useOutbox";
 import SharedRestores from "./SharedRestores";
 import StoryStateEditor from "./StoryStateEditor";
 import { connectLiveRoom } from "./liveRoom";
@@ -51,7 +53,6 @@ function StoryVerseApp() {
     [rules, setRules] = useState("설정을 임의로 변경하지 않는다."),
     [characters, setCharacters] = useState("");
   const [mode, setMode] = useState("solo"),
-    [input, setInput] = useState(""),
     [label, setLabel] = useState("중요한 선택 전");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -64,9 +65,23 @@ function StoryVerseApp() {
     [inviteCode, setInviteCode] = useState("");
   const [character, setCharacter] = useState(""),
     [filter, setFilter] = useState("all");
-  const pending = useRef(null),
-    busyRef = useRef(false);
+  const busyRef = useRef(false),
+    accountRef = useRef(null),
+    roomRef = useRef(null);
+  roomRef.current = room?.id;
+  const outbox = useOutbox(user, async (userId, roomId) => {
+    if (accountRef.current === userId && roomRef.current === roomId) {
+      try {
+        await open(roomId, true);
+      } catch (e) {
+        if (accountRef.current === userId) setError(e.message);
+      }
+    }
+  });
+  const draft = useRoomDraft(outbox.store, outbox.scope, room?.id);
+  const { input, setInput } = draft;
   const reset = () => {
+    accountRef.current = null;
     setUser(null);
     setRoom(null);
     setRooms([]);
@@ -74,14 +89,12 @@ function StoryVerseApp() {
     setFriends([]);
     setMembers([]);
     setResults([]);
-    setInput("");
     setPassword("");
     setCode("");
     setInviteCode("");
     setError("");
     setNotice("");
     setTab("home");
-    pending.current = null;
   };
   const run = async (fn) => {
     if (busyRef.current) return false;
@@ -100,27 +113,34 @@ function StoryVerseApp() {
       setBusy(false);
     }
   };
-  const refresh = async () => setRooms(await request("/rooms"));
-  const open = async (id) => {
+  const refresh = async () => {
+    const expected = accountRef.current;
+    const result = await request("/rooms");
+    if (expected === accountRef.current) setRooms(result);
+  };
+  const open = async (id, onlyIfCurrent = false) => {
+    const expected = accountRef.current;
     const [r, s, m] = await Promise.all([
       request("/rooms/" + id),
       request("/rooms/" + id + "/saves"),
       request("/rooms/" + id + "/members"),
     ]);
+    if (expected !== accountRef.current)
+      throw new Error("계정이 변경되었습니다.");
+    if (onlyIfCurrent && roomRef.current !== id) return;
     setRoom(r);
     setSaves(s);
     setMembers(m);
     setInviteCode("");
-    if (room?.id !== id) {
-      setInput("");
-      pending.current = null;
-    }
   };
   useEffect(() => {
     onExpired(reset);
     restoreSession()
       .then((s) => {
-        if (s) setUser(s.user);
+        if (s) {
+          accountRef.current = s.user.id;
+          setUser(s.user);
+        }
       })
       .catch((e) => setError(e.message))
       .finally(() => setReady(true));
@@ -183,26 +203,22 @@ function StoryVerseApp() {
     });
   const send = (ai) =>
     run(async () => {
-      if (!input.trim()) return;
-      const path = "/rooms/" + room.id + (ai ? "/turns" : "/messages");
       const content = input.trim();
-      if (
-        !pending.current ||
-        pending.current.content !== content ||
-        pending.current.path !== path
-      )
-        pending.current = { request_id: Crypto.randomUUID(), content, path };
+      if (!content) return;
+      if (!draft.ready) throw new Error("초안을 불러오는 중입니다.");
       const actor =
         members.find((m) => m.user_id === user.id)?.character ||
         user.display_name;
-      await request(path, "POST", {
+      await outbox.enqueue({
+        requestId: Crypto.randomUUID(),
+        roomId: room.id,
+        kind: ai ? "turn" : "message",
+        roomTitle: room.title,
         actor,
         content,
-        request_id: pending.current.request_id,
       });
-      pending.current = null;
-      setInput("");
-      await open(room.id);
+      draft.clearQueued(content);
+      setNotice("메시지를 기기 전송 큐에 저장했습니다.");
     });
   const save = () =>
     run(async () => {
@@ -336,6 +352,7 @@ function StoryVerseApp() {
                     ...(register ? { display_name: name } : {}),
                   });
                   setPassword("");
+                  accountRef.current = s.user.id;
                   setUser(s.user);
                 }),
               )}
@@ -393,10 +410,30 @@ function StoryVerseApp() {
               {field(input, setInput, "행동이나 대사 입력", {
                 multiline: true,
                 maxLength: 5000,
+                editable: !busy && draft.ready,
               })}
+              <Text
+                accessibilityLiveRegion="polite"
+                style={draft.status === "error" ? styles.error : styles.muted}
+              >
+                {draft.status === "saving"
+                  ? "초안 저장 중…"
+                  : draft.status === "saved"
+                    ? "초안 저장됨"
+                    : draft.status === "error"
+                      ? "초안을 기기에 저장하지 못했습니다."
+                      : "초안 불러오는 중…"}
+              </Text>
               {btn("AI와 이야기 이어가기", () => send(true))}
               {room.mode === "multiplayer" &&
                 btn("참가자에게 메시지 보내기", () => send(false), true)}
+              <OutboxPanel
+                items={outbox.items.filter((item) => item.roomId === room.id)}
+                error={outbox.error}
+                busy={busy}
+                onRetry={(item) => run(() => outbox.retry(item))}
+                onDiscard={(item) => run(() => outbox.discard(item))}
+              />
               {btn("대화 새로고침", () => run(() => open(room.id)), true)}
               <Text style={styles.heading}>나의 저장 지점</Text>
               {field(label, setLabel, "저장 이름")}
@@ -622,6 +659,13 @@ function StoryVerseApp() {
                   {btn("스토리 시작", create)}
                 </>
               )}
+              <OutboxPanel
+                items={outbox.items}
+                error={outbox.error}
+                busy={busy}
+                onRetry={(item) => run(() => outbox.retry(item))}
+                onDiscard={(item) => run(() => outbox.discard(item))}
+              />
               <Text style={styles.heading}>최근 플레이한 스토리</Text>
               <View style={styles.filters}>
                 {["all", "mine", "joined", "solo", "multiplayer"].map(

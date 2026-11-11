@@ -1,5 +1,7 @@
 import * as SecureStore from "expo-secure-store";
-export const API = process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:8000";
+export const API = (
+  process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:8000"
+).replace(/\/+$/, "");
 const KEY = "storyverse.session.v1";
 let session = null;
 let refreshPromise = null;
@@ -55,7 +57,10 @@ async function raw(path, method = "GET", body, token) {
                   : typeof data.detail === "string"
                     ? data.detail
                     : "입력 내용을 확인해주세요.";
-      throw Object.assign(new Error(message), { status: response.status });
+      throw Object.assign(new Error(message), {
+        status: response.status,
+        retryAfter: Number(response.headers?.get?.("Retry-After")) || undefined,
+      });
     }
     return data;
   } catch (e) {
@@ -161,9 +166,12 @@ async function refresh() {
   refreshPromise = task;
   return task;
 }
-export async function request(path, method = "GET", body) {
+export async function request(path, method = "GET", body, expectedUserId) {
+  if (expectedUserId && session?.user.id !== expectedUserId)
+    throw sessionChanged();
   const expected = generation;
   const original = await accessToken();
+  assertGeneration(expected);
   try {
     const result = await raw(path, method, body, original);
     assertGeneration(expected);
@@ -183,4 +191,8 @@ export async function logout() {
   const expected = generation;
   await request("/auth/logout", "POST");
   if (expected === generation) await clearSession();
+}
+
+export function requestForUser(userId, path, method = "GET", body) {
+  return request(path, method, body, userId);
 }
