@@ -212,3 +212,22 @@ def test_recent_rooms_and_multiplayer_actor_are_account_scoped(account):
     )
     assert result.json()["actor"] == "Bob"
     assert [r["id"] for r in b.get("/rooms").json()] == [first]
+
+
+def test_concurrent_retries_of_same_mobile_request_store_once(account):
+    client, _ = account()
+    rid = room(client)["id"]
+    payload = {
+        "actor": "Player",
+        "content": "Recovered mobile send",
+        "request_id": "same-mobile-request",
+    }
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(
+            pool.map(
+                lambda _: client.post(f"/rooms/{rid}/messages", json=payload), range(4)
+            )
+        )
+    assert all(r.status_code == 200 for r in responses)
+    assert len({r.json()["id"] for r in responses}) == 1
+    assert len(client.get(f"/rooms/{rid}").json()["messages"]) == 1

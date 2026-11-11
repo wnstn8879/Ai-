@@ -47,3 +47,42 @@ def test_records_survive_new_process(tmp_path):
         env=env,
         cwd=os.path.dirname(os.path.dirname(__file__)),
     )
+
+
+def test_mobile_retry_receipt_survives_server_restart(tmp_path):
+    import json
+
+    path = tmp_path / "receipts.db"
+    env = dict(os.environ, DATABASE_URL="sqlite:///" + str(path), PYTHONPATH=".")
+    cwd = os.path.dirname(os.path.dirname(__file__))
+    subprocess.check_call(
+        [sys.executable, "-m", "alembic", "upgrade", "head"], env=env, cwd=cwd
+    )
+    create = textwrap.dedent("""
+        import json
+        from fastapi.testclient import TestClient
+        from app.main import app
+        c=TestClient(app)
+        auth=c.post('/auth/register',json={'email':'mobile@example.com','password':'persistent-password','display_name':'Player'}).json()
+        c.headers['Authorization']='Bearer '+auth['access_token']
+        room=c.post('/rooms',json={'title':'Mobile','world_rules':'Keep choices'}).json()
+        message=c.post('/rooms/'+room['id']+'/messages',json={'actor':'Player','content':'Once','request_id':'mobile-restart'}).json()
+        print(json.dumps({'room':room['id'],'message':message['id']}))
+    """)
+    created = json.loads(
+        subprocess.check_output(
+            [sys.executable, "-c", create], env=env, cwd=cwd, text=True
+        )
+    )
+    verify = textwrap.dedent(f"""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        c=TestClient(app)
+        auth=c.post('/auth/login',json={{'email':'mobile@example.com','password':'persistent-password'}}).json()
+        c.headers['Authorization']='Bearer '+auth['access_token']
+        message=c.post('/rooms/{created['room']}/messages',json={{'actor':'Player','content':'Once','request_id':'mobile-restart'}})
+        assert message.status_code==200,message.text
+        assert message.json()['id']=='{created['message']}'
+        assert len(c.get('/rooms/{created['room']}').json()['messages'])==1
+    """)
+    subprocess.check_call([sys.executable, "-c", verify], env=env, cwd=cwd)
