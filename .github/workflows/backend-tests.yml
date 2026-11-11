@@ -98,6 +98,7 @@ jobs:
             cd ../backend
             python -m alembic upgrade head
             nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 >/tmp/storyverse-qa-api.log 2>&1 &
+            echo $! >/tmp/storyverse-qa-api.pid
           )
           nohup npx expo start --localhost --port 8081 >/tmp/storyverse-metro.log 2>&1 &
           python - <<'PY'
