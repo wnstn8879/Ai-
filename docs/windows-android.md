@@ -23,3 +23,7 @@ AI 대화는 `backend/.env`에 `OPENAI_API_KEY`와 선택적으로 `OPENAI_MODEL
 - 반복 실행은 `Start-StoryVerse-Windows.cmd -NoInstall`, 연결 점검은 `Start-StoryVerse-Windows.cmd -Mode Check`를 명령 프롬프트에서 사용할 수 있습니다.
 
 API와 Metro는 `127.0.0.1`에서만 열고 ADB reverse로 휴대폰에 연결합니다. 공유기 포트 개방이나 방화벽 전체 해제는 필요하지 않습니다. 실제 Windows+휴대폰 USB 조합은 미검증입니다. Windows 자동 검증은 PowerShell 문법·기기 목록·필수 프로그램·포트 확인·전용 DB 마이그레이션·서버 응답을 검사합니다.
+
+## PC 화면에서 앱 사용
+
+현재 Windows 전용 앱이나 브라우저 버전은 제공하지 않습니다. PC 화면에서 실행하려면 [Android Studio](https://developer.android.com/studio)의 Device Manager에서 Android 가상 기기(API 35 권장)를 만들어 먼저 실행하세요. 휴대폰을 분리한 상태에서 같은 `Start-StoryVerse-Windows.cmd`를 실행하면 에뮬레이터에 앱을 설치합니다. PC에서 가상화가 활성화되어 있어야 합니다. Android 앱 자체는 Linux CI의 두 에뮬레이터에서 검증했으며 Windows 에뮬레이터 조합은 미검증입니다.

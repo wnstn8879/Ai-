@@ -50,7 +50,7 @@
 ## 4. 테스트 결과
 
 - 변경 전 기준 코드: pytest **5개 통과**.
-- 최종 기능 검증: SQLite pytest **35개 통과**, GitHub Actions PostgreSQL 17 pytest **35개 통과**.
+- 최종 기능 검증: SQLite pytest **36개 통과**, GitHub Actions PostgreSQL 17 pytest **36개 통과**.
 - 모바일 세션: Node 테스트 **25개 통과**. 영구 SQLite 큐/초안 복원, 실패 트랜잭션, 응답 유실, 중복 워커, FIFO, 요청 제한, AI 확인, 계정별 HTTP 전송 방지를 추가했습니다. 동시/지연 갱신, 계정 변경 후 지연 응답, 깨진 세션, 네트워크 장애, 중복 WebSocket·재연결·중지·권한 상실을 검증했습니다. 실제 OS SecureStore 대신 테스트 대역을 사용합니다.
 - Expo 호환성 검사 통과. React Native를 Expo SDK 54에 맞는 0.81.5로 수정했습니다.
 - Android JS/Hermes 번들, 네이티브 prebuild, GitHub Actions debug APK 빌드 성공. 에뮬레이터 결과는 아래에 기록합니다.
@@ -59,7 +59,7 @@
 
 ## 5. Android와 외부 서비스
 
-이 작업 환경의 로컬 Gradle 다운로드 오류와 SDK 부재를 피하기 위해 GitHub Actions에 Android SDK·Java 17·Gradle 빌드 작업을 추가했습니다. SDK 설치가 폐기된 `tools` 패키지를 요청하던 문제를 수정한 뒤 **debug APK 빌드가 성공**했습니다. [APK 아티팩트](https://github.com/wnstn8879/Ai-/actions/runs/42755850593/artifacts/13735931713)는 Metro가 필요한 개발용 APK입니다.
+이 작업 환경의 로컬 Gradle 다운로드 오류와 SDK 부재를 피하기 위해 GitHub Actions에 Android SDK·Java 17·Gradle 빌드 작업을 추가했습니다. SDK 설치가 폐기된 `tools` 패키지를 요청하던 문제를 수정한 뒤 **debug APK 빌드가 성공**했습니다. [APK 아티팩트](https://github.com/wnstn8879/Ai-/actions/runs/43239165687/artifacts/13952529971)는 Metro가 필요한 개발용 APK입니다.
 
 초기 에뮬레이터 QA에서 로그인·키보드·메시지 저장이 확인되었고, 상태 편집/공용 복원 영역의 중복 React 키가 오류 배너를 띄워 공용 저장 터치를 가리는 문제를 발견했습니다. 키를 영역별로 분리하고 폐기된 SafeAreaView를 Safe Area Provider로 교체했습니다. 수정본 APK 빌드와 회귀 테스트가 통과했고, **Android API 35 에뮬레이터 QA도 통과**했습니다. 네이티브 로그인, 프로세스 종료/재실행 후 SecureStore 세션 유지, 스토리 불러오기, 소프트 키보드/입력창, 메시지 저장, 공용 체크포인트 생성, 다른 계정의 명시적 동의, 전원 동의 복원 실행, 복원 방 화면 이동, 원본 기록과 두 참가자 유지를 확인했습니다. 두 번째 계정은 API로 참여했으며 두 대의 Android 기기를 동시에 검증한 것은 아닙니다. 키보드가 입력창을 가리지 않는 화면과 복원 방 화면을 직접 확인했습니다.
 
@@ -98,3 +98,5 @@
 [실행 #27](https://github.com/wnstn8879/Ai-/actions/runs/43239165687)에서 SQLite/PostgreSQL 각각 35개, 모바일 25개와 Android QA가 성공했습니다. API 35 에뮬레이터 두 대의 네이티브 로그인·채팅 동기화·공용 동의·복원을 검증했습니다. 초안 재시작 복원과 서버 중단 후 재시작 시 메시지 단일 저장도 통과했습니다. 검증 코드는 `655aaab`입니다.
 
 Windows USB 실행 도구와 전용 로컬 서버를 추가했습니다. [실행 안내](windows-android.md)를 확인하세요. 실제 Windows와 휴대폰 USB 조합은 미검증입니다. 외부 AI 키·운영 서명·공개 배포는 포함하지 않습니다.
+
+[실행 #29](https://github.com/wnstn8879/Ai-/actions/runs/43243252919)에서 Windows 실행 도구 검증, SQLite/PostgreSQL 각각 36개, 모바일 25개가 통과했습니다. Windows 검증은 스크립트 문법·필수 프로그램 탐지·ADB 목록 해석·포트 검사·공백 포함 경로의 전용 DB 마이그레이션·백엔드 실행/응답까지이며 물리 USB 기기는 포함하지 않습니다.
