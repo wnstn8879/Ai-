@@ -1,4 +1,4 @@
-# 개발 결과 — 2026-11-10
+# 개발 결과 — 2026-11-11
 
 ## 1. 실제 구현
 
@@ -19,6 +19,9 @@
 - 개인/공용 저장 구분, 저장 당시 캐릭터 배정 고정, 현재 참가자 전원 동의 후 방장이 실행하는 비파괴 공용 복원.
 - 동의 철회/거절/취소/만료, 진행·상태·참가자 출입·배정 변경에 따른 동의 무효화, 동시/중복 복원 단일 결과 보장.
 - 원본은 유지하며 저장 시점의 새 멀티플레이 방에 현재 참가자와 역할을 복사. 원래 방 ID 안의 파괴적 롤백은 제공하지 않음.
+- 기기 SQLite 초안/전송 큐와 계정·서버·방 분리, 트랜잭션 저장 후 전송, 동일 요청 ID 유지, 방별 FIFO와 오류별 재시도.
+- AI 요청은 최초 명시적 전송과 다시 보내기만 허용하며 실패·앱 재시작 후 자동 비용/진행을 막도록 확인 상태 유지.
+- 큐 요청은 현재 사용자로 한정하고 메시지 전송 완료 후 다른 방으로 이동한 화면을 다시 덮어쓰지 않음. Android 자동 백업 비활성화.
 
 ## 2. 변경 파일
 
@@ -32,7 +35,9 @@
 - `backend/tests/`: 기존 분기·AI·영속성 테스트를 인증 흐름에 연결, 권한/세션/동시성/WebSocket/마이그레이션/AI 한도 회귀 테스트.
 - `mobile/App.js`, `mobile/api.js`: 모바일 화면과 인증·자동 갱신·친구·초대·실시간 클라이언트.
 - `mobile/SharedRestores.js`: 공용 저장·동의 상태·철회·복원 화면.
-- `mobile/scripts/android_smoke.py`: Android 네이티브 로그인/키보드/메시지/공용 복원 QA 스크립트.
+- `mobile/scripts/android_smoke.py`: 두 Android 에뮬레이터의 네이티브 대화/동의/복원과 초안·전송 큐 재시작 QA 스크립트.
+- `mobile/outboxStore.js`, `mobile/localStore.js`, `mobile/outboxWorker.js`, `mobile/useOutbox.js`, `mobile/OutboxPanel.js`: 영구 저장·처리·화면과 계정 범위 보호.
+- `mobile/outbox.test.cjs`: 실제 SQLite 파일 재개와 실패/순서/동시성/계정 분리 테스트.
 - `mobile/StoryStateEditor.js`, `mobile/liveRoom.js`: 상태 편집 화면과 단일 재연결 컨트롤러.
 - `mobile/session.test.cjs`, `mobile/liveRoom.test.cjs`, `mobile/package.json`, `mobile/package-lock.json`: 세션 회귀 테스트와 호환 버전 고정.
 - `mobile/app.json`, `mobile/eas.json`: Android 패키지·키보드·보안 저장·내부 APK/운영 AAB 프로필.
@@ -40,13 +45,13 @@
 
 ## 3. DB 변경
 
-기존 `rooms`, `messages`, `saves`와 기록을 유지합니다. `users`, `user_sessions`, `room_members`, `save_owners`, `friendships`, `invitations`, `message_receipts`, `ai_usage`, `scene_states`, `save_snapshots`를 추가하고 외래키/검색 인덱스와 메시지 위치 고유 인덱스를 도입했습니다. 소유자가 불명인 과거 방은 그대로 보존하며 계정에 자동 배정하지 않습니다. 마이그레이션은 001→002→003→004→005 순서입니다. 005는 기존 저장을 private로 보존하면서 saves.scope와 공용 저장 당시 캐릭터 배정/참가자 세대/복원 제안/투표를 추가합니다. 004는 기존 세계관 규칙과 캐릭터 이름을 상태 버전 0으로 보존하고 기존 체크포인트에 연결합니다.
+기존 `rooms`, `messages`, `saves`와 기록을 유지합니다. `users`, `user_sessions`, `room_members`, `save_owners`, `friendships`, `invitations`, `message_receipts`, `ai_usage`, `scene_states`, `save_snapshots`를 추가하고 외래키/검색 인덱스와 메시지 위치 고유 인덱스를 도입했습니다. 소유자가 불명인 과거 방은 그대로 보존하며 계정에 자동 배정하지 않습니다. 마이그레이션은 001→002→003→004→005 순서입니다. 005는 기존 저장을 private로 보존하면서 saves.scope와 공용 저장 당시 캐릭터 배정/참가자 세대/복원 제안/투표를 추가합니다. 004는 기존 세계관 규칙과 캐릭터 이름을 상태 버전 0으로 보존하고 기존 체크포인트에 연결합니다. 이번 기기 큐 단계에는 서버 스키마 변경이 없으며 앱 전용 SQLite에 drafts/outbox 테이블을 추가했습니다. 비밀번호/토큰은 저장하지 않고 SecureStore를 유지합니다.
 
 ## 4. 테스트 결과
 
 - 변경 전 기준 코드: pytest **5개 통과**.
-- 최종 기능 검증: SQLite pytest **33개 통과**, GitHub Actions PostgreSQL 17 pytest **33개 통과**.
-- 모바일 세션: Node 테스트 **12개 통과**. 동시/지연 갱신, 계정 변경 후 지연 응답, 깨진 세션, 네트워크 장애, 중복 WebSocket·재연결·중지·권한 상실을 검증했습니다. 실제 OS SecureStore 대신 테스트 대역을 사용합니다.
+- 최종 기능 검증: SQLite pytest **35개 통과**, GitHub Actions PostgreSQL 17 pytest **35개 통과**.
+- 모바일 세션: Node 테스트 **25개 통과**. 영구 SQLite 큐/초안 복원, 실패 트랜잭션, 응답 유실, 중복 워커, FIFO, 요청 제한, AI 확인, 계정별 HTTP 전송 방지를 추가했습니다. 동시/지연 갱신, 계정 변경 후 지연 응답, 깨진 세션, 네트워크 장애, 중복 WebSocket·재연결·중지·권한 상실을 검증했습니다. 실제 OS SecureStore 대신 테스트 대역을 사용합니다.
 - Expo 호환성 검사 통과. React Native를 Expo SDK 54에 맞는 0.81.5로 수정했습니다.
 - Android JS/Hermes 번들, 네이티브 prebuild, GitHub Actions debug APK 빌드 성공. 에뮬레이터 결과는 아래에 기록합니다.
 - 초기 중복 메시지 테스트가 영수증 저장 누락을 발견했고 수정 후 통과했습니다. 백엔드와 모바일 회귀 테스트 실패는 없습니다. Android 네이티브 작업 결과는 아래에 별도로 기록합니다. FastAPI/Starlette의 TestClient 의존성 사용 중단 안내 경고가 1개 있습니다.
@@ -70,7 +75,7 @@
 - 초대 링크/딥링크, 방장 위임, 강제 퇴장, 친구 삭제/차단.
 - 이메일 소유 확인, 비밀번호 찾기, 전체 기기 세션 관리, 운영용 공유 레이트리미터.
 - 미완료 동일 AI 요청의 중복 외부 호출 차단, 실제 토큰 비용 정산, 여러 LLM 공급자 선택.
-- 앱 종료에도 보존되는 발신 큐, 증분 이벤트·페이지네이션·대규모 동시접속 부하 검증.
+- 과거 대화 전체의 오프라인 캐시, 세계관 편집 미저장 초안, 증분 이벤트·페이지네이션·대규모 동시접속 부하 검증. 메시지 초안과 발신 큐는 기기 재시작 복원을 구현했습니다.
 - 커뮤니티와 창작자 수익화.
 
 ## 7. GitHub
@@ -84,6 +89,12 @@
 ## 8. 다음 우선순위
 
 1. 실제 Android 두 기기에서 채팅/공용 동의/상태 편집/재연결/키보드 QA, 운영 서명 빌드 환경 준비.
-2. 앱 종료에도 보존되는 초안과 전송 큐, 큰 대화 기록의 페이지네이션.
+2. 큰 대화 기록의 페이지네이션과 오프라인 대화 캐시, 오래된 전송 기록의 사용자 관리.
 3. 이메일 확인/복구와 공유 제한, 전체 세션 관리, 운영 로그·보존·부하 검증.
 4. 실제 AI 연결·장기 메모리·요청 큐·토큰별 비용 관리, 동의 기반 대역.
+
+## 후속 검증과 Windows 실행 도구
+
+[실행 #27](https://github.com/wnstn8879/Ai-/actions/runs/43239165687)에서 SQLite/PostgreSQL 각각 35개, 모바일 25개와 Android QA가 성공했습니다. API 35 에뮬레이터 두 대의 네이티브 로그인·채팅 동기화·공용 동의·복원을 검증했습니다. 초안 재시작 복원과 서버 중단 후 재시작 시 메시지 단일 저장도 통과했습니다. 검증 코드는 `655aaab`입니다.
+
+Windows USB 실행 도구와 전용 로컬 서버를 추가했습니다. [실행 안내](windows-android.md)를 확인하세요. 실제 Windows와 휴대폰 USB 조합은 미검증입니다. 외부 AI 키·운영 서명·공개 배포는 포함하지 않습니다.

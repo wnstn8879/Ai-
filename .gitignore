@@ -12,3 +12,6 @@ __pycache__/
 
 /mobile/android/
 /mobile/dist/
+
+.runtime/
+app-debug.apk
