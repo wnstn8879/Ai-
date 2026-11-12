@@ -4,6 +4,7 @@ import json
 import os
 import re
 import signal
+import shlex
 import subprocess
 import sys
 import time
@@ -121,6 +122,40 @@ def install_launch(apk):
     adb("install", "-r", "-t", str(apk))
     adb("reverse", "tcp:8081", "tcp:8081")
     adb("reverse", "tcp:8000", "tcp:8000")
+    # Pin both AVDs to their own adb reverse transport. A fresh second AVD may otherwise
+    # probe Metro before its default emulator-network host route is ready.
+    adb("shell", "run-as", PACKAGE, "mkdir", "-p", "shared_prefs")
+    prefs = '<?xml version="1.0" encoding="utf-8" standalone="yes"?><map><string name="debug_http_host">127.0.0.1:8081</string></map>'
+    command = "cat > shared_prefs/" + PACKAGE + "_preferences.xml"
+    subprocess.run(
+        [
+            "adb",
+            "-s",
+            SERIAL,
+            "shell",
+            "run-as",
+            PACKAGE,
+            "sh",
+            "-c",
+            shlex.quote(command),
+        ],
+        input=prefs,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+
+    def metro_ready():
+        try:
+            response = adb(
+                "shell",
+                'printf "GET /status HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n" | toybox nc -w 3 127.0.0.1 8081',
+            )
+            return "packager-status:running" in response
+        except subprocess.SubprocessError:
+            return False
+
+    wait_until("Metro reachable from " + SERIAL, metro_ready, timeout=60)
     restart_app()
 
 
