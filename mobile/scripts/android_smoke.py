@@ -51,6 +51,7 @@ def screenshot(name):
 
 
 def hierarchy():
+    adb("shell", "rm", "-f", "/sdcard/storyverse-window.xml")
     adb("shell", "uiautomator", "dump", "/sdcard/storyverse-window.xml")
     raw = adb("shell", "cat", "/sdcard/storyverse-window.xml")
     (ARTIFACTS / (SERIAL + "-last-window.xml")).write_text(raw)
@@ -65,7 +66,12 @@ def find(label, scroll=False, timeout=35):
     deadline = time.monotonic() + timeout
     attempt = 0
     while time.monotonic() < deadline:
-        tree = hierarchy()
+        try:
+            tree = hierarchy()
+        except (subprocess.SubprocessError, ET.ParseError):
+            # During startup/keyboard transitions UIAutomator may report success without writing XML.
+            time.sleep(0.5)
+            continue
         for node in tree.iter("node"):
             if label in (node.attrib.get("text"), node.attrib.get("content-desc")):
                 x1, y1, x2, y2 = bounds(node)
@@ -125,6 +131,7 @@ def restart_app():
 
 def login(email):
     find("이메일", timeout=150)
+    screenshot("00-login-" + SERIAL)
     tap("이메일")
     adb("shell", "input", "text", email)
     hide_keyboard()
@@ -251,10 +258,12 @@ def run(apk):
     install_launch(apk)
     login(email)
     find(title, True, 60)
+    screenshot("00-home")
     restart_app()
     find(title, True, 90)
     tap("마지막 장면에서 이어하기", True)
     find("초안 저장됨", True)
+    screenshot("00-story-" + SERIAL)
     tap("행동이나 대사 입력", True)
     adb("shell", "input", "text", "AndroidNativeSmoke")
     wait_until("native keyboard visible", keyboard_shown)
