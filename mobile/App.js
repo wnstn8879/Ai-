@@ -1,42 +1,877 @@
-import React, {useEffect,useState} from 'react';
-import {SafeAreaView,ScrollView,Text,TextInput,Pressable,View,Alert,StyleSheet} from 'react-native';
-import {StatusBar} from 'expo-status-bar';
-const API=process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:8000';
-async function request(path,method='GET',body){
- const response=await fetch(API+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
- if(!response.ok) throw new Error(await response.text());
- return response.json();
+import React, { useEffect, useRef, useState } from "react";
+import {
+  ScrollView,
+  Text,
+  TextInput,
+  Pressable,
+  View,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  AppState,
+  Alert,
+} from "react-native";
+import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import OutboxPanel from "./OutboxPanel";
+import { useOutbox, useRoomDraft } from "./useOutbox";
+import SharedRestores from "./SharedRestores";
+import StoryStateEditor from "./StoryStateEditor";
+import { connectLiveRoom } from "./liveRoom";
+import * as Crypto from "expo-crypto";
+import {
+  API,
+  request,
+  authenticate,
+  restoreSession,
+  onExpired,
+  accessToken,
+  logout,
+} from "./api";
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StoryVerseApp />
+    </SafeAreaProvider>
+  );
 }
-export default function App(){
- const [rooms,setRooms]=useState([]),[room,setRoom]=useState(null),[saves,setSaves]=useState([]);
- const [title,setTitle]=useState('사라진 왕국'),[rules,setRules]=useState('설정을 임의로 변경하지 않는다.');
- const [mode,setMode]=useState('solo'),[input,setInput]=useState(''),[label,setLabel]=useState('중요한 선택 전');
- const [busy,setBusy]=useState(false);
- const run=async fn=>{setBusy(true);try{await fn();}catch(e){Alert.alert('오류',String(e.message));}finally{setBusy(false);}};
- const refresh=async()=>setRooms(await request('/rooms'));
- const open=async id=>{const [r,s]=await Promise.all([request('/rooms/'+id),request('/rooms/'+id+'/saves')]);setRoom(r);setSaves(s);};
- useEffect(()=>{refresh().catch(()=>Alert.alert('서버 연결 실패','EXPO_PUBLIC_API_URL 설정을 확인하세요.'));},[]);
- const create=()=>run(async()=>{const r=await request('/rooms','POST',{title,world_rules:rules,characters:[],mode});await refresh();await open(r.id);});
- const send=()=>run(async()=>{if(!input.trim())return;await request('/rooms/'+room.id+'/turns','POST',{actor:'나',content:input.trim()});setInput('');await open(room.id);});
- const save=()=>run(async()=>{await request('/rooms/'+room.id+'/saves','POST',{label,message_index:room.messages.length});await open(room.id);});
- const resume=s=>run(async()=>{const r=await request('/saves/'+s.id+'/resume','POST');await refresh();await open(r.id);});
- const fork=index=>run(async()=>{const r=await request('/rooms/'+room.id+'/forks','POST',{title:room.title+' · 다른 선택',message_index:index});await refresh();await open(r.id);});
- const btn=(text,fn)=><Pressable disabled={busy} onPress={fn} style={styles.button}><Text style={styles.buttonText}>{text}</Text></Pressable>;
- return <SafeAreaView style={styles.root}><StatusBar style="light"/><ScrollView contentContainerStyle={styles.body}><Text style={styles.title}>StoryVerse AI</Text>
- {room?<><Text style={styles.heading}>{room.title}</Text><Text style={styles.muted}>{room.mode==='solo'?'혼자 플레이':'멀티플레이'} · 메시지 {room.messages.length}개</Text>
- {btn('← 내 스토리',()=>{setRoom(null);refresh();})}
- {room.messages.map((m,i)=><View key={m.id} style={styles.card}><Text style={styles.text}>{i+1}. {m.actor}: {m.content}</Text>{btn('이 지점부터 새로 시작',()=>fork(i+1))}</View>)}
- <TextInput style={styles.input} value={input} onChangeText={setInput} placeholder="행동이나 대사 입력" placeholderTextColor="#999"/>
- {btn('AI와 대화하기 (자동 저장)',send)}
- <TextInput style={styles.input} value={label} onChangeText={setLabel} placeholder="저장 이름" placeholderTextColor="#999"/>
- {btn('현재 지점 수동 저장',save)}
- <Text style={styles.heading}>저장 지점</Text>
- {saves.map(s=><View style={styles.card} key={s.id}><Text style={styles.text}>{s.label} · {s.message_index}번째 메시지</Text>{btn('이 지점부터 이어하기',()=>resume(s))}</View>)}
- {btn('처음부터 다른 이야기 만들기',()=>fork(0))}
- </>:<><Text style={styles.heading}>새 스토리</Text><TextInput style={styles.input} value={title} onChangeText={setTitle}/><TextInput multiline style={styles.input} value={rules} onChangeText={setRules}/>
- {btn(mode==='solo'?'모드: 혼자 플레이':'모드: 멀티플레이',()=>setMode(mode==='solo'?'multiplayer':'solo'))}{btn('새 스토리 시작',create)}
- <Text style={styles.heading}>내 스토리 · 이어하기</Text>{rooms.map(r=><View style={styles.card} key={r.id}><Text style={styles.text}>{r.title} · {r.messages.length}개 메시지</Text>{btn('이어서 하기',()=>run(()=>open(r.id)))}</View>)}</>}
- <Text style={styles.muted}>AI 대화는 서버의 OPENAI_API_KEY 설정이 필요합니다. 실시간 멀티플레이와 로그인은 후속 구현 대상입니다.</Text>
- </ScrollView></SafeAreaView>;
+
+function StoryVerseApp() {
+  const [user, setUser] = useState(null),
+    [ready, setReady] = useState(false),
+    [register, setRegister] = useState(false);
+  const [email, setEmail] = useState(""),
+    [password, setPassword] = useState(""),
+    [name, setName] = useState("");
+  const [tab, setTab] = useState("home"),
+    [rooms, setRooms] = useState([]),
+    [room, setRoom] = useState(null),
+    [saves, setSaves] = useState([]),
+    [members, setMembers] = useState([]);
+  const [title, setTitle] = useState("사라진 왕국"),
+    [rules, setRules] = useState("설정을 임의로 변경하지 않는다."),
+    [characters, setCharacters] = useState("");
+  const [mode, setMode] = useState("solo"),
+    [label, setLabel] = useState("중요한 선택 전");
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [live, setLive] = useState("연결 대기");
+  const [friends, setFriends] = useState([]),
+    [query, setQuery] = useState(""),
+    [results, setResults] = useState([]),
+    [code, setCode] = useState(""),
+    [inviteCode, setInviteCode] = useState("");
+  const [character, setCharacter] = useState(""),
+    [filter, setFilter] = useState("all");
+  const busyRef = useRef(false),
+    accountRef = useRef(null),
+    roomRef = useRef(null);
+  roomRef.current = room?.id;
+  const outbox = useOutbox(user, async (userId, roomId) => {
+    if (accountRef.current === userId && roomRef.current === roomId) {
+      try {
+        await open(roomId, true);
+      } catch (e) {
+        if (accountRef.current === userId) setError(e.message);
+      }
+    }
+  });
+  const draft = useRoomDraft(outbox.store, outbox.scope, room?.id);
+  const { input, setInput } = draft;
+  const reset = () => {
+    accountRef.current = null;
+    setUser(null);
+    setRoom(null);
+    setRooms([]);
+    setSaves([]);
+    setFriends([]);
+    setMembers([]);
+    setResults([]);
+    setPassword("");
+    setCode("");
+    setInviteCode("");
+    setError("");
+    setNotice("");
+    setTab("home");
+  };
+  const run = async (fn) => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await fn();
+      return true;
+    } catch (e) {
+      setError(e.message);
+      return false;
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+  const refresh = async () => {
+    const expected = accountRef.current;
+    const result = await request("/rooms");
+    if (expected === accountRef.current) setRooms(result);
+  };
+  const open = async (id, onlyIfCurrent = false) => {
+    const expected = accountRef.current;
+    const [r, s, m] = await Promise.all([
+      request("/rooms/" + id),
+      request("/rooms/" + id + "/saves"),
+      request("/rooms/" + id + "/members"),
+    ]);
+    if (expected !== accountRef.current)
+      throw new Error("계정이 변경되었습니다.");
+    if (onlyIfCurrent && roomRef.current !== id) return;
+    setRoom(r);
+    setSaves(s);
+    setMembers(m);
+    setInviteCode("");
+  };
+  useEffect(() => {
+    onExpired(reset);
+    restoreSession()
+      .then((s) => {
+        if (s) {
+          accountRef.current = s.user.id;
+          setUser(s.user);
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setReady(true));
+    return () => onExpired(() => {});
+  }, []);
+  useEffect(() => {
+    if (user) run(refresh);
+  }, [user?.id]);
+  // One controller owns reconnects and ignores callbacks from replaced connections.
+  useEffect(() => {
+    if (!room || !user || room.mode !== "multiplayer") return;
+    const controller = connectLiveRoom({
+      url: API.replace(/^http/, "ws") + "/rooms/" + room.id + "/live",
+      getToken: async () => {
+        await request("/auth/me");
+        return accessToken();
+      },
+      onSnapshot: (snapshot) =>
+        setRoom((current) =>
+          current?.id === snapshot.id ? snapshot : current,
+        ),
+      onStatus: setLive,
+      onDenied: () => {
+        setRoom(null);
+        setMembers([]);
+        setSaves([]);
+        setError("이 방의 참여 권한이 없습니다.");
+      },
+    });
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") controller.resume();
+    });
+    return () => {
+      subscription.remove();
+      controller.stop();
+    };
+  }, [room?.id, user?.id]);
+  const saveStoryState = (base_revision, state) =>
+    run(async () => {
+      await request("/rooms/" + room.id + "/state", "PUT", {
+        base_revision,
+        state,
+      });
+      await open(room.id);
+      setNotice("세계관과 캐릭터 상태를 저장했습니다.");
+    });
+  const create = () =>
+    run(async () => {
+      const r = await request("/rooms", "POST", {
+        title,
+        world_rules: rules,
+        characters: characters
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        mode,
+      });
+      await refresh();
+      await open(r.id);
+    });
+  const send = (ai, sceneRequest = null) =>
+    run(async () => {
+      const content = sceneRequest || input.trim();
+      if (!content) return;
+      if (!draft.ready) throw new Error("초안을 불러오는 중입니다.");
+      const actor =
+        members.find((m) => m.user_id === user.id)?.character ||
+        user.display_name;
+      await outbox.enqueue({
+        requestId: Crypto.randomUUID(),
+        roomId: room.id,
+        kind: ai ? "turn" : "message",
+        roomTitle: room.title,
+        actor,
+        content,
+      });
+      if (!sceneRequest) draft.clearQueued(content);
+      setNotice("메시지를 기기 전송 큐에 저장했습니다.");
+    });
+  const save = () =>
+    run(async () => {
+      await request("/rooms/" + room.id + "/saves", "POST", {
+        label,
+        message_index: room.messages.length,
+      });
+      await open(room.id);
+      setNotice("개인 저장 지점을 저장했습니다.");
+    });
+  const pauseStory = () =>
+    run(async () => {
+      const id = room.id;
+      const expected = accountRef.current;
+      if (!outbox.store || !outbox.scope)
+        throw new Error(
+          "기기 저장소를 확인하는 중입니다. 잠시 후 다시 시도해주세요.",
+        );
+      const pending = await outbox.store.list(outbox.scope);
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      if (pending.some((item) => item.roomId === id))
+        throw new Error(
+          "아직 전송이 끝나지 않은 메시지가 있습니다. 전송 기록을 확인한 뒤 저장해주세요.",
+        );
+      const current = await request("/rooms/" + id);
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      await request("/rooms/" + id + "/saves", "POST", {
+        label: "잠깐 쉬어가기 · " + new Date().toLocaleString("ko-KR"),
+        message_index: current.messages.length,
+      });
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      await refresh();
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      setRoom(null);
+      setTab("home");
+      setNotice(
+        "현재까지의 대화를 저장했습니다. 보관함에서 이어가거나 과거 장면으로 분기할 수 있어요. 미전송 초안은 이 기기에 보관됩니다.",
+      );
+    });
+  const confirmFork = (index) =>
+    Alert.alert(
+      "이 장면에서 다른 선택을 해볼까요?",
+      "선택한 메시지까지의 대화와 당시 상태를 복사해 혼자 플레이하는 새 이야기를 만듭니다. 원본과 다른 참가자의 진행은 보존됩니다.",
+      [
+        { text: "취소", style: "cancel" },
+        { text: "새 분기 만들기", onPress: () => fork(index) },
+      ],
+    );
+  const resume = (s) =>
+    run(async () => {
+      const r = await request("/saves/" + s.id + "/resume", "POST");
+      await refresh();
+      await open(r.id);
+    });
+  const fork = (index) =>
+    run(async () => {
+      const r = await request("/rooms/" + room.id + "/forks", "POST", {
+        title: room.title + " · 다른 선택",
+        message_index: index,
+      });
+      await refresh();
+      await open(r.id);
+    });
+  const loadFriends = async () => setFriends(await request("/friends"));
+  const navigate = (t) =>
+    run(async () => {
+      setRoom(null);
+      setTab(t);
+      if (t === "friends") await loadFriends();
+      else await refresh();
+    });
+  const btn = (text, fn, secondary = false) => (
+    <Pressable
+      accessibilityRole="button"
+      disabled={busy}
+      onPress={fn}
+      style={[
+        styles.button,
+        secondary && styles.secondary,
+        busy && styles.disabled,
+      ]}
+    >
+      <Text style={styles.buttonText}>{text}</Text>
+    </Pressable>
+  );
+  const field = (value, change, placeholder, extra = {}) => (
+    <TextInput
+      accessibilityLabel={placeholder}
+      style={styles.input}
+      value={value}
+      onChangeText={change}
+      placeholder={placeholder}
+      placeholderTextColor="#99a8bd"
+      {...extra}
+    />
+  );
+  const owner = members.find((m) => m.user_id === user?.id)?.role === "owner";
+  const privateSaves = saves.filter(
+    (s) => (s.scope || "private") === "private",
+  );
+  const shown = rooms.filter(
+    (r) =>
+      filter === "all" ||
+      r.mode === filter ||
+      (filter === "mine" && r.role === "owner") ||
+      (filter === "joined" && r.role === "participant"),
+  );
+  if (!ready)
+    return (
+      <SafeAreaView style={styles.root}>
+        <ActivityIndicator
+          accessibilityLabel="세션 불러오는 중"
+          color="#b3a5ff"
+        />
+      </SafeAreaView>
+    );
+  return (
+    <SafeAreaView style={styles.root}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.body}
+        >
+          <Text style={styles.brand}>
+            STORYVERSE <Text style={styles.accent}>AI</Text>
+          </Text>
+          {busy && <ActivityIndicator color="#b3a5ff" />}
+          {!!error && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          )}
+          {!!notice && (
+            <Text accessibilityLiveRegion="polite" style={styles.notice}>
+              {notice}
+            </Text>
+          )}
+          {!user ? (
+            <>
+              <Text style={styles.hero}>
+                당신의 선택이{"\n"}새로운 세계가 됩니다.
+              </Text>
+              <Text style={styles.muted}>
+                이야기를 저장하고 친구와 함께 이어가세요.
+              </Text>
+              <Text style={styles.heading}>
+                {register ? "계정 만들기" : "다시 만나 반가워요"}
+              </Text>
+              {field(email, setEmail, "이메일", {
+                autoCapitalize: "none",
+                keyboardType: "email-address",
+                autoComplete: "email",
+              })}
+              {field(password, setPassword, "비밀번호 (10자 이상)", {
+                secureTextEntry: true,
+                autoCapitalize: "none",
+                autoComplete: register ? "new-password" : "current-password",
+              })}
+              {register && field(name, setName, "표시 이름")}
+              {btn(register ? "회원가입" : "로그인", () =>
+                run(async () => {
+                  const s = await authenticate(register, {
+                    email,
+                    password,
+                    ...(register ? { display_name: name } : {}),
+                  });
+                  setPassword("");
+                  accountRef.current = s.user.id;
+                  setUser(s.user);
+                }),
+              )}
+              {btn(
+                register ? "이미 계정이 있어요" : "새 계정 만들기",
+                () => setRegister(!register),
+                true,
+              )}
+            </>
+          ) : room ? (
+            <>
+              {btn(
+                "← 보관함으로",
+                () =>
+                  run(async () => {
+                    await refresh();
+                    setRoom(null);
+                  }),
+                true,
+              )}
+              <Text style={styles.hero}>{room.title}</Text>
+              <Text style={styles.muted}>
+                {room.mode === "solo" ? "혼자 플레이" : "함께 플레이 · " + live}{" "}
+                · 자동 저장
+              </Text>
+              {room.parent_room_id && (
+                <Text selectable style={styles.muted}>
+                  평행세계 · 부모 스토리 {room.parent_room_id}
+                </Text>
+              )}
+              <View style={styles.card}>
+                <Text style={styles.heading}>출근길엔 짧게, 원하면 계속</Text>
+                <Text style={styles.muted}>
+                  AI는 짧은 장면 단위로 진행합니다. 언제든 마무리를 요청하거나
+                  저장하고 쉬세요. 각 메시지에서 다른 선택으로 분기할 수
+                  있습니다.
+                </Text>
+                {btn(
+                  "이번 장면 짧게 마무리",
+                  () =>
+                    send(
+                      true,
+                      "지금까지 내가 선택한 행동만 바탕으로 이번 장면을 짧게 정리해줘. 결정하지 않은 행동은 남겨두고 쉬어갈 수 있는 지점에서 멈춰줘.",
+                    ),
+                  true,
+                )}
+                {btn("저장하고 쉬기", pauseStory, true)}
+                {room.mode === "multiplayer" &&
+                  btn(
+                    "여기서 혼자 계속하기",
+                    () => confirmFork(room.messages.length),
+                    true,
+                  )}
+              </View>
+              <StoryStateEditor
+                key={"state:" + room.id}
+                room={room}
+                canEdit={owner}
+                busy={busy}
+                onSave={saveStoryState}
+              />
+              {room.messages.length === 0 && (
+                <Text style={styles.muted}>
+                  첫 행동이나 대사로 이야기를 시작하세요.
+                </Text>
+              )}
+              {room.messages.map((m, i) => (
+                <View
+                  key={m.id}
+                  style={[styles.card, m.actor === "AI" && styles.ai]}
+                >
+                  <Text style={styles.accent}>{m.actor}</Text>
+                  <Text selectable style={styles.message}>
+                    {m.content}
+                  </Text>
+                  {btn(
+                    "여기서 개인 평행세계 만들기",
+                    () => confirmFork(i + 1),
+                    true,
+                  )}
+                </View>
+              ))}
+              {field(input, setInput, "행동이나 대사 입력", {
+                multiline: true,
+                maxLength: 5000,
+                editable: !busy && draft.ready,
+              })}
+              <Text
+                accessibilityLiveRegion="polite"
+                style={draft.status === "error" ? styles.error : styles.muted}
+              >
+                {draft.status === "saving"
+                  ? "초안 저장 중…"
+                  : draft.status === "saved"
+                    ? "초안 저장됨"
+                    : draft.status === "error"
+                      ? "초안을 기기에 저장하지 못했습니다."
+                      : "초안 불러오는 중…"}
+              </Text>
+              {btn("AI와 이야기 이어가기", () => send(true))}
+              {room.mode === "multiplayer" &&
+                btn("참가자에게 메시지 보내기", () => send(false), true)}
+              <OutboxPanel
+                items={outbox.items.filter((item) => item.roomId === room.id)}
+                error={outbox.error}
+                busy={busy}
+                onRetry={(item) => run(() => outbox.retry(item))}
+                onDiscard={(item) => run(() => outbox.discard(item))}
+              />
+              {btn("대화 새로고침", () => run(() => open(room.id)), true)}
+              <Text style={styles.heading}>나의 저장 지점</Text>
+              {field(label, setLabel, "저장 이름")}
+              {btn("현재 장면 저장", save)}
+              {privateSaves.length === 0 && (
+                <Text style={styles.muted}>
+                  아직 수동 저장 지점이 없습니다. 메시지는 자동 저장됩니다.
+                </Text>
+              )}
+              {privateSaves.map((s) => (
+                <View style={styles.card} key={s.id}>
+                  <Text style={styles.text}>
+                    {s.label} · {s.message_index}번째 메시지
+                  </Text>
+                  {btn("개인 분기로 이어하기", () => resume(s), true)}
+                </View>
+              ))}
+              {btn("처음부터 개인 분기 만들기", () => confirmFork(0), true)}
+              {room.mode === "multiplayer" && (
+                <SharedRestores
+                  key={"shared:" + room.id}
+                  room={room}
+                  user={user}
+                  owner={owner}
+                  busy={busy}
+                  onAction={run}
+                  onOpenRoom={open}
+                  onResume={resume}
+                />
+              )}
+              {room.mode === "multiplayer" && (
+                <>
+                  <Text style={styles.heading}>참가자</Text>
+                  {members.map((m) => (
+                    <View key={m.user_id} style={styles.card}>
+                      <Text style={styles.text}>
+                        {m.display_name} ·{" "}
+                        {m.role === "owner" ? "방장" : "참가자"} ·{" "}
+                        {m.character || "캐릭터 미배정"}
+                      </Text>
+                      {owner &&
+                        btn(
+                          "입력한 캐릭터 배정",
+                          () =>
+                            run(async () => {
+                              await request(
+                                "/rooms/" + room.id + "/members/" + m.user_id,
+                                "PUT",
+                                { character },
+                              );
+                              await open(room.id);
+                            }),
+                          true,
+                        )}
+                    </View>
+                  ))}
+                  {owner ? (
+                    <>
+                      {field(character, setCharacter, "배정할 캐릭터 이름")}
+                      {btn("1회용 초대 코드 만들기", () =>
+                        run(async () =>
+                          setInviteCode(
+                            (
+                              await request(
+                                "/rooms/" + room.id + "/invitations",
+                                "POST",
+                              )
+                            ).code,
+                          ),
+                        ),
+                      )}
+                      {!!inviteCode && (
+                        <Text selectable style={styles.notice}>
+                          24시간 유효 · 길게 눌러 복사{"\n"}
+                          {inviteCode}
+                        </Text>
+                      )}
+                    </>
+                  ) : (
+                    btn(
+                      "방 나가기",
+                      () =>
+                        run(async () => {
+                          await request("/rooms/" + room.id + "/leave", "POST");
+                          setRoom(null);
+                          await refresh();
+                        }),
+                      true,
+                    )
+                  )}
+                </>
+              )}
+            </>
+          ) : tab === "friends" ? (
+            <>
+              <Text style={styles.hero}>함께할 친구</Text>
+              {field(query, setQuery, "표시 이름 또는 사용자 ID (3자 이상)")}
+              {btn("사용자 검색", () =>
+                run(async () =>
+                  setResults(
+                    await request("/users?q=" + encodeURIComponent(query)),
+                  ),
+                ),
+              )}
+              {results.map((u) => (
+                <View style={styles.card} key={u.id}>
+                  <Text style={styles.text}>{u.display_name}</Text>
+                  {btn(
+                    "친구 요청",
+                    () =>
+                      run(async () => {
+                        await request("/friends/requests", "POST", {
+                          user_id: u.id,
+                        });
+                        await loadFriends();
+                        setNotice("친구 요청을 보냈습니다.");
+                      }),
+                    true,
+                  )}
+                </View>
+              ))}
+              <Text style={styles.heading}>친구 및 요청</Text>
+              {friends.length === 0 && (
+                <Text style={styles.muted}>
+                  친구를 검색해 첫 요청을 보내세요.
+                </Text>
+              )}
+              {friends.map((f) => (
+                <View key={f.user_id} style={styles.card}>
+                  <Text style={styles.text}>
+                    {f.display_name} ·{" "}
+                    {f.status === "accepted"
+                      ? "친구"
+                      : f.incoming
+                        ? "받은 요청"
+                        : "수락 대기"}
+                  </Text>
+                  {f.status === "pending" && f.incoming && (
+                    <>
+                      {btn("수락", () =>
+                        run(async () => {
+                          await request(
+                            "/friends/requests/" + f.user_id + "/respond",
+                            "POST",
+                            { accept: true },
+                          );
+                          await loadFriends();
+                        }),
+                      )}
+                      {btn(
+                        "거절",
+                        () =>
+                          run(async () => {
+                            await request(
+                              "/friends/requests/" + f.user_id + "/respond",
+                              "POST",
+                              { accept: false },
+                            );
+                            await loadFriends();
+                          }),
+                        true,
+                      )}
+                    </>
+                  )}
+                </View>
+              ))}
+              {btn("친구 목록 새로고침", () => run(loadFriends), true)}
+              <Text style={styles.heading}>초대받은 스토리</Text>
+              {field(code, setCode, "초대 코드", { autoCapitalize: "none" })}
+              {btn("초대 코드로 참여", () =>
+                run(async () => {
+                  const r = await request("/invitations/join", "POST", {
+                    code: code.trim(),
+                  });
+                  setCode("");
+                  await refresh();
+                  await open(r.room_id);
+                }),
+              )}
+            </>
+          ) : tab === "settings" ? (
+            <>
+              <Text style={styles.hero}>내 프로필</Text>
+              <Text style={styles.text}>{user.display_name}</Text>
+              <Text style={styles.muted}>{user.email}</Text>
+              <Text selectable style={styles.muted}>
+                사용자 ID · {user.id}
+              </Text>
+              {btn(
+                "로그아웃",
+                () =>
+                  run(async () => {
+                    await logout();
+                    reset();
+                  }),
+                true,
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.hero}>
+                {tab === "home"
+                  ? "어떤 이야기를\n만들어볼까요?"
+                  : "나의 스토리 보관함"}
+              </Text>
+              {tab === "home" && (
+                <>
+                  <Text style={styles.heading}>새로운 세계</Text>
+                  {field(title, setTitle, "스토리 제목")}
+                  {field(rules, setRules, "세계관 규칙", { multiline: true })}
+                  {field(
+                    characters,
+                    setCharacters,
+                    "캐릭터 이름 (쉼표로 구분)",
+                  )}
+                  {btn(
+                    mode === "solo"
+                      ? "모드 · 혼자 플레이"
+                      : "모드 · 친구와 함께",
+                    () => setMode(mode === "solo" ? "multiplayer" : "solo"),
+                    true,
+                  )}
+                  {btn("스토리 시작", create)}
+                </>
+              )}
+              <OutboxPanel
+                items={outbox.items}
+                error={outbox.error}
+                busy={busy}
+                onRetry={(item) => run(() => outbox.retry(item))}
+                onDiscard={(item) => run(() => outbox.discard(item))}
+              />
+              <Text style={styles.heading}>최근 플레이한 스토리</Text>
+              <View style={styles.filters}>
+                {["all", "mine", "joined", "solo", "multiplayer"].map(
+                  (f, i) => (
+                    <Pressable
+                      key={f}
+                      disabled={busy}
+                      onPress={() => setFilter(f)}
+                      style={[styles.chip, filter === f && styles.selected]}
+                    >
+                      <Text style={styles.text}>
+                        {["전체", "내가 만든", "참여 중", "혼자", "함께"][i]}
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
+              </View>
+              {shown.length === 0 && (
+                <Text style={styles.muted}>
+                  저장된 스토리가 없습니다. 새 세계를 만들거나 초대로
+                  참여하세요.
+                </Text>
+              )}
+              {shown.map((r) => (
+                <View style={styles.card} key={r.id}>
+                  <Text style={styles.heading}>{r.title}</Text>
+                  <Text style={styles.muted}>
+                    {r.mode === "solo" ? "혼자" : "함께"}
+                    {r.role === "owner"
+                      ? " · 내가 만든 이야기"
+                      : " · 참여 중"}{" "}
+                    · {r.messages.length}개 메시지
+                    {r.parent_room_id ? " · 평행세계" : ""}
+                  </Text>
+                  {r.parent_room_id && (
+                    <Text selectable style={styles.muted}>
+                      부모 · {r.parent_room_id}
+                    </Text>
+                  )}
+                  {btn(
+                    "마지막 장면에서 이어하기",
+                    () => run(() => open(r.id)),
+                    true,
+                  )}
+                </View>
+              ))}
+              {btn("보관함 새로고침", () => run(refresh), true)}
+            </>
+          )}
+        </ScrollView>
+        {user && !room && (
+          <View style={styles.nav}>
+            {[
+              ["home", "홈"],
+              ["library", "보관함"],
+              ["friends", "친구"],
+              ["settings", "설정"],
+            ].map(([id, text]) => (
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: tab === id }}
+                key={id}
+                disabled={busy}
+                onPress={() => navigate(id)}
+                style={styles.navItem}
+              >
+                <Text style={tab === id ? styles.accent : styles.muted}>
+                  {text}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 }
-const styles=StyleSheet.create({root:{flex:1,backgroundColor:'#101827'},body:{padding:20,gap:12},title:{fontSize:28,color:'white',fontWeight:'bold'},heading:{fontSize:19,color:'white',fontWeight:'bold',marginTop:10},muted:{color:'#a3adbc'},input:{borderWidth:1,borderColor:'#596579',color:'white',borderRadius:10,padding:12,minHeight:48},card:{backgroundColor:'#263245',padding:12,borderRadius:10,gap:8},text:{color:'white'},button:{backgroundColor:'#6265d9',padding:11,borderRadius:9,alignItems:'center'},buttonText:{color:'white',fontWeight:'600'}});
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  root: {
+    flex: 1,
+    backgroundColor: "#0e1421",
+  },
+  body: { padding: 20, paddingBottom: 36, gap: 14 },
+  brand: {
+    fontSize: 18,
+    color: "#f3f3ff",
+    letterSpacing: 2,
+    fontWeight: "800",
+  },
+  hero: {
+    fontSize: 29,
+    lineHeight: 38,
+    color: "#f3f3ff",
+    fontWeight: "700",
+    marginTop: 18,
+  },
+  heading: { fontSize: 18, color: "#f3f3ff", fontWeight: "700", marginTop: 8 },
+  muted: { color: "#a8b5c9", lineHeight: 22 },
+  accent: { color: "#b9a6ff", fontWeight: "700" },
+  input: {
+    borderWidth: 1,
+    borderColor: "#3a4962",
+    backgroundColor: "#151f30",
+    color: "white",
+    borderRadius: 12,
+    padding: 14,
+    minHeight: 50,
+    fontSize: 16,
+  },
+  card: { backgroundColor: "#1b2639", padding: 16, borderRadius: 14, gap: 10 },
+  ai: { borderLeftWidth: 3, borderLeftColor: "#a48bf0" },
+  text: { color: "#eef2fa", lineHeight: 23 },
+  message: { color: "#eef2fa", fontSize: 16, lineHeight: 27 },
+  button: {
+    backgroundColor: "#7160c8",
+    padding: 14,
+    borderRadius: 11,
+    alignItems: "center",
+    minHeight: 48,
+  },
+  secondary: { backgroundColor: "#293752" },
+  disabled: { opacity: 0.55 },
+  buttonText: { color: "white", fontWeight: "600", textAlign: "center" },
+  error: {
+    color: "#ffb7b7",
+    backgroundColor: "#3a202d",
+    padding: 12,
+    borderRadius: 8,
+  },
+  notice: { color: "#b4e9cd", lineHeight: 24 },
+  nav: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderColor: "#334158",
+    paddingVertical: 8,
+  },
+  navItem: { flex: 1, alignItems: "center", paddingVertical: 12 },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: { padding: 10, borderRadius: 20, backgroundColor: "#26334a" },
+  selected: { backgroundColor: "#7160c8" },
+});
