@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   AppState,
+  Alert,
 } from "react-native";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -201,9 +202,9 @@ function StoryVerseApp() {
       await refresh();
       await open(r.id);
     });
-  const send = (ai) =>
+  const send = (ai, sceneRequest = null) =>
     run(async () => {
-      const content = input.trim();
+      const content = sceneRequest || input.trim();
       if (!content) return;
       if (!draft.ready) throw new Error("초안을 불러오는 중입니다.");
       const actor =
@@ -217,7 +218,7 @@ function StoryVerseApp() {
         actor,
         content,
       });
-      draft.clearQueued(content);
+      if (!sceneRequest) draft.clearQueued(content);
       setNotice("메시지를 기기 전송 큐에 저장했습니다.");
     });
   const save = () =>
@@ -229,6 +230,44 @@ function StoryVerseApp() {
       await open(room.id);
       setNotice("개인 저장 지점을 저장했습니다.");
     });
+  const pauseStory = () =>
+    run(async () => {
+      const id = room.id;
+      const expected = accountRef.current;
+      if (!outbox.store || !outbox.scope)
+        throw new Error(
+          "기기 저장소를 확인하는 중입니다. 잠시 후 다시 시도해주세요.",
+        );
+      const pending = await outbox.store.list(outbox.scope);
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      if (pending.some((item) => item.roomId === id))
+        throw new Error(
+          "아직 전송이 끝나지 않은 메시지가 있습니다. 전송 기록을 확인한 뒤 저장해주세요.",
+        );
+      const current = await request("/rooms/" + id);
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      await request("/rooms/" + id + "/saves", "POST", {
+        label: "잠깐 쉬어가기 · " + new Date().toLocaleString("ko-KR"),
+        message_index: current.messages.length,
+      });
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      await refresh();
+      if (expected !== accountRef.current || roomRef.current !== id) return;
+      setRoom(null);
+      setTab("home");
+      setNotice(
+        "현재까지의 대화를 저장했습니다. 보관함에서 이어가거나 과거 장면으로 분기할 수 있어요. 미전송 초안은 이 기기에 보관됩니다.",
+      );
+    });
+  const confirmFork = (index) =>
+    Alert.alert(
+      "이 장면에서 다른 선택을 해볼까요?",
+      "선택한 메시지까지의 대화와 당시 상태를 복사해 혼자 플레이하는 새 이야기를 만듭니다. 원본과 다른 참가자의 진행은 보존됩니다.",
+      [
+        { text: "취소", style: "cancel" },
+        { text: "새 분기 만들기", onPress: () => fork(index) },
+      ],
+    );
   const resume = (s) =>
     run(async () => {
       const r = await request("/saves/" + s.id + "/resume", "POST");
@@ -383,6 +422,30 @@ function StoryVerseApp() {
                   평행세계 · 부모 스토리 {room.parent_room_id}
                 </Text>
               )}
+              <View style={styles.card}>
+                <Text style={styles.heading}>출근길엔 짧게, 원하면 계속</Text>
+                <Text style={styles.muted}>
+                  AI는 짧은 장면 단위로 진행합니다. 언제든 마무리를 요청하거나
+                  저장하고 쉬세요. 각 메시지에서 다른 선택으로 분기할 수
+                  있습니다.
+                </Text>
+                {btn(
+                  "이번 장면 짧게 마무리",
+                  () =>
+                    send(
+                      true,
+                      "지금까지 내가 선택한 행동만 바탕으로 이번 장면을 짧게 정리해줘. 결정하지 않은 행동은 남겨두고 쉬어갈 수 있는 지점에서 멈춰줘.",
+                    ),
+                  true,
+                )}
+                {btn("저장하고 쉬기", pauseStory, true)}
+                {room.mode === "multiplayer" &&
+                  btn(
+                    "여기서 혼자 계속하기",
+                    () => confirmFork(room.messages.length),
+                    true,
+                  )}
+              </View>
               <StoryStateEditor
                 key={"state:" + room.id}
                 room={room}
@@ -404,7 +467,11 @@ function StoryVerseApp() {
                   <Text selectable style={styles.message}>
                     {m.content}
                   </Text>
-                  {btn("여기서 개인 평행세계 만들기", () => fork(i + 1), true)}
+                  {btn(
+                    "여기서 개인 평행세계 만들기",
+                    () => confirmFork(i + 1),
+                    true,
+                  )}
                 </View>
               ))}
               {field(input, setInput, "행동이나 대사 입력", {
@@ -451,7 +518,7 @@ function StoryVerseApp() {
                   {btn("개인 분기로 이어하기", () => resume(s), true)}
                 </View>
               ))}
-              {btn("처음부터 개인 분기 만들기", () => fork(0), true)}
+              {btn("처음부터 개인 분기 만들기", () => confirmFork(0), true)}
               {room.mode === "multiplayer" && (
                 <SharedRestores
                   key={"shared:" + room.id}
