@@ -104,3 +104,13 @@ Windows USB 실행 도구와 전용 로컬 서버를 추가했습니다. [실행
 ## 휴대폰 중심 짧은 장면 플레이
 
 사용 방향을 PC 없이 휴대폰에서 사용하는 짧은 장면 + 자유로운 장기 플레이로 명확히 했습니다. 장면 마무리 요청·저장하고 쉬기·멀티플레이에서 개인 분기로 계속하기·분기 원본 보존 확인을 추가했습니다. AI 응답은 약 5회를 작은 장면으로 삼는 지침이며 강제 종료나 실제 소요 시간 보장은 아닙니다. 로컬 pytest 42개, 모바일 25개, Android JS/Hermes 번들 생성이 통과했습니다. DB 마이그레이션 변경은 없습니다. 실제 AI 품질과 최신 UI 실기기 검증, HTTPS 서버와 독립 실행 배포는 남아 있습니다. [제품 방향과 검증 범위](mobile-play-loop.md)를 참고하세요.
+
+## 휴대폰에서 직접 설치하는 체험 APK
+
+PC·USB·Metro·로그인·인터넷 없이 여는 별도 `com.storyverse.ai.preview` 앱을 구현하고 `assembleRelease`로 APK를 생성했습니다. 실제 AI가 아닌 준비된 선택형 이야기라고 화면에 명시합니다. 원래 온라인 인증·친구·멀티플레이·AI 기능은 보존합니다.
+
+추가 파일: `mobile/OfflinePreview.js`(모바일 홈·대화·고정 입력창·타임라인), `offlineStory.js`(짧은 두 결말), `offlineStore.js`(기기 저장/스냅샷/분기), `offline.test.cjs`(SQLite 8개 검증), `app.config.js`(체험 패키지), `scripts/preview_smoke.py`, `.github/workflows/android-preview.yml`. `App.js`에서 체험판 진입을 연결했습니다. 서버 스키마 변경 없이 별도 기기 DB에 rooms/saves/drafts 테이블을 생성합니다.
+
+모바일 33개와 Android 번들 생성, [단독 APK 빌드/네이티브 검증 #1](https://github.com/wnstn8879/Ai-/actions/runs/43674389846)이 통과했습니다. 비행기 모드에서 선택 입력·자동 저장·종료 후 초안 복원·체크포인트·과거 메시지 분기·보관함 재시작을 검증했고 실제 캡처 화면을 확인했습니다. 검증 커밋은 `121d12f`입니다. [일반 회귀 실행 #35](https://github.com/wnstn8879/Ai-/actions/runs/43674389771)의 SQLite/PostgreSQL 각각 42개, 모바일 33개, Windows 검사도 성공했습니다. 온라인 네이티브 작업 결과는 해당 실행을 확인하세요.
+
+[휴대폰 설치·사용자 테스트·다운로드·체크섬](phone-preview.md)을 기록했습니다. APK는 내부 체험용 서명이며 운영 스토어 서명은 아닙니다. 실제 기기 UI 검증, 실제 AI와 상시 HTTPS 서비스, 온라인 단독 배포는 남아 있습니다. 다음 우선순위는 사용자의 실기기 피드백을 반영하고 운영 서비스 연결을 준비하는 것입니다.
