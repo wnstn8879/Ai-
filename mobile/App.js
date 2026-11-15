@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import OutboxPanel from "./OutboxPanel";
+import OfflinePreview from "./OfflinePreview";
 import { useOutbox, useRoomDraft } from "./useOutbox";
 import SharedRestores from "./SharedRestores";
 import StoryStateEditor from "./StoryStateEditor";
@@ -31,14 +32,22 @@ import {
 } from "./api";
 
 export default function App() {
+  const previewBuild = process.env.EXPO_PUBLIC_APP_VARIANT === "preview";
+  const [offline, setOffline] = useState(previewBuild);
   return (
     <SafeAreaProvider>
-      <StoryVerseApp />
+      {offline ? (
+        <OfflinePreview
+          onExit={previewBuild ? null : () => setOffline(false)}
+        />
+      ) : (
+        <StoryVerseApp onTryOffline={() => setOffline(true)} />
+      )}
     </SafeAreaProvider>
   );
 }
 
-function StoryVerseApp() {
+function StoryVerseApp({ onTryOffline }) {
   const [user, setUser] = useState(null),
     [ready, setReady] = useState(false),
     [register, setRegister] = useState(false);
@@ -363,6 +372,7 @@ function StoryVerseApp() {
           )}
           {!user ? (
             <>
+              {btn("로그인 없이 기기에서 체험", onTryOffline, true)}
               <Text style={styles.hero}>
                 당신의 선택이{"\n"}새로운 세계가 됩니다.
               </Text>
