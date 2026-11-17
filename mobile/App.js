@@ -62,6 +62,8 @@ function StoryVerseApp({ onTryOffline }) {
   const [title, setTitle] = useState("사라진 왕국"),
     [rules, setRules] = useState("설정을 임의로 변경하지 않는다."),
     [characters, setCharacters] = useState("");
+  const [premise, setPremise] = useState(""),
+    [goal, setGoal] = useState("");
   const [mode, setMode] = useState("solo"),
     [label, setLabel] = useState("중요한 선택 전");
   const [busy, setBusy] = useState(false),
@@ -199,9 +201,17 @@ function StoryVerseApp({ onTryOffline }) {
     });
   const create = () =>
     run(async () => {
+      if (!title.trim() || !rules.trim())
+        throw new Error("세계의 제목과 규칙을 입력해주세요.");
       const r = await request("/rooms", "POST", {
-        title,
-        world_rules: rules,
+        title: title.trim(),
+        world_rules: [
+          premise.trim() && "[세계와 첫 사건]\n" + premise.trim(),
+          goal.trim() && "[탐험 목표]\n" + goal.trim(),
+          "[세계관 규칙]\n" + rules.trim(),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         characters: characters
           .split(",")
           .map((x) => x.trim())
@@ -356,9 +366,8 @@ function StoryVerseApp({ onTryOffline }) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.body}
         >
-          <Text style={styles.brand}>
-            STORYVERSE <Text style={styles.accent}>AI</Text>
-          </Text>
+          <Text style={styles.brand}>IMAGINE</Text>
+          <Text style={styles.muted}>Your Story, Your World, Your Choice.</Text>
           {busy && <ActivityIndicator color="#b3a5ff" />}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
@@ -374,10 +383,11 @@ function StoryVerseApp({ onTryOffline }) {
             <>
               {btn("로그인 없이 기기에서 체험", onTryOffline, true)}
               <Text style={styles.hero}>
-                당신의 선택이{"\n"}새로운 세계가 됩니다.
+                당신의 상상을,{"\n"}함께 탐험하는 세계로.
               </Text>
               <Text style={styles.muted}>
-                이야기를 저장하고 친구와 함께 이어가세요.
+                직접 만든 세계에서 혼자 또는 친구와 탐험하세요. 선택과 기록을
+                저장하고, 다른 가능성으로 분기할 수 있어요.
               </Text>
               <Text style={styles.heading}>
                 {register ? "계정 만들기" : "다시 만나 반가워요"}
@@ -713,14 +723,33 @@ function StoryVerseApp({ onTryOffline }) {
             <>
               <Text style={styles.hero}>
                 {tab === "home"
-                  ? "어떤 이야기를\n만들어볼까요?"
+                  ? "어떤 상상을\n탐험해볼까요?"
                   : "나의 스토리 보관함"}
               </Text>
               {tab === "home" && (
                 <>
-                  <Text style={styles.heading}>새로운 세계</Text>
-                  {field(title, setTitle, "스토리 제목")}
-                  {field(rules, setRules, "세계관 규칙", { multiline: true })}
+                  <Text style={styles.heading}>
+                    내 상상을 게임의 출발점으로
+                  </Text>
+                  <Text style={styles.muted}>
+                    배경과 첫 사건, 탐험 목표를 정하세요. 이 설정은 대화와
+                    저장·분기에 함께 반영됩니다.
+                  </Text>
+                  {field(title, setTitle, "스토리 제목", { maxLength: 120 })}
+                  {field(premise, setPremise, "상상하는 세계와 첫 사건", {
+                    multiline: true,
+                    maxLength: 5000,
+                  })}
+                  {field(
+                    goal,
+                    setGoal,
+                    "탐험 목표 (예: 친구와 사라진 문을 찾기)",
+                    { multiline: true, maxLength: 2000 },
+                  )}
+                  {field(rules, setRules, "세계관 규칙", {
+                    multiline: true,
+                    maxLength: 10000,
+                  })}
                   {field(
                     characters,
                     setCharacters,

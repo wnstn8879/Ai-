@@ -1,4 +1,8 @@
-# StoryVerse AI
+# IMAGINE
+
+**Your Story, Your World, Your Choice.**
+
+AI 기반 참여형 스토리 창작·게임 플랫폼. 내 상상을 세계로 만들고 친구와 함께 탐험하는 것이 핵심입니다. [제품 방향과 구현 상태](docs/imagine-product-direction.md)를 참고하세요. 저장소/내부 패키지 이름은 기존 StoryVerse를 유지합니다.
 
 사용자가 만든 세계관에서 혼자 또는 초대한 친구와 이야기를 진행하는 Android 우선 Expo 앱입니다. 기존 방·메시지·체크포인트·평행세계·서버 LLM 어댑터를 유지하면서 계정과 비공개 접근 권한을 추가했습니다. 현재 개발 단계이며 공개 배포하지 않았습니다.
 

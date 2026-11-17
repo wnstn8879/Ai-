@@ -154,9 +154,7 @@ export default function OfflinePreview({ onExit }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>
-            STORYVERSE <Text style={styles.accent}>AI</Text>
-          </Text>
+          <Text style={styles.brand}>IMAGINE</Text>
           <Text style={styles.badge}>기기 체험</Text>
         </View>
         <Text style={styles.disclosure}>
@@ -184,11 +182,16 @@ export default function OfflinePreview({ onExit }) {
         )}
         {!room ? (
           <ScrollView contentContainerStyle={styles.page}>
-            <Text style={styles.eyebrow}>출근길의 작은 모험</Text>
-            <Text style={styles.hero}>잠깐의 선택,{"\n"}계속되는 이야기.</Text>
+            <Text style={styles.eyebrow}>
+              Your Story, Your World, Your Choice.
+            </Text>
+            <Text style={styles.hero}>
+              당신의 상상을,{"\n"}함께 탐험하는 세계로.
+            </Text>
             <Text style={styles.muted}>
-              짧은 장면으로 즐기고, 언제든 쉬어가세요. 다른 선택이 궁금하면 과거
-              장면에서 새 이야기를 만들 수 있어요.
+              짧은 장면으로 탐험하고 언제든 저장하세요. 과거 장면에서 다른
+              선택으로 분기할 수 있어요. 이 기기 체험판은 준비된 이야기로
+              진행합니다.
             </Text>
             {button(
               "새 이야기 시작",

@@ -114,3 +114,9 @@ PC·USB·Metro·로그인·인터넷 없이 여는 별도 `com.storyverse.ai.pre
 모바일 33개와 Android 번들 생성, [단독 APK 빌드/네이티브 검증 #1](https://github.com/wnstn8879/Ai-/actions/runs/43674389846)이 통과했습니다. 비행기 모드에서 선택 입력·자동 저장·종료 후 초안 복원·체크포인트·과거 메시지 분기·보관함 재시작을 검증했고 실제 캡처 화면을 확인했습니다. 검증 커밋은 `121d12f`입니다. [일반 회귀 실행 #35](https://github.com/wnstn8879/Ai-/actions/runs/43674389771)의 SQLite/PostgreSQL 각각 42개, 모바일 33개, Windows 검사도 성공했습니다. 온라인 네이티브 작업 결과는 해당 실행을 확인하세요.
 
 [휴대폰 설치·사용자 테스트·다운로드·체크섬](phone-preview.md)을 기록했습니다. APK는 내부 체험용 서명이며 운영 스토어 서명은 아닙니다. 실제 기기 UI 검증, 실제 AI와 상시 HTTPS 서비스, 온라인 단독 배포는 남아 있습니다. 다음 우선순위는 사용자의 실기기 피드백을 반영하고 운영 서비스 연결을 준비하는 것입니다.
+
+## IMAGINE 제품 방향 반영
+
+브랜드를 IMAGINE / Your Story, Your World, Your Choice.로 정리하고 ‘상상을 세계로 만들고 친구와 함께 탐험’하는 방향을 홈과 시작 화면에 반영했습니다. 온라인 세계 생성에 배경/첫 사건과 탐험 목표를 추가해 기존 world_rules와 상태 스냅샷·AI 문맥·분기 보존에 연결했습니다. 소설 생성·읽기·게임 전환·작품 공유는 미구현 단계로 구분합니다.
+
+변경 파일은 App.js, OfflinePreview.js, app.json, app.config.js와 README 및 제품 방향 문서입니다. 서버 DB/마이그레이션 변경은 없으며 Android 패키지·SQLite 파일·세션 키를 유지합니다. 모바일 테스트 33개와 Android 번들 생성이 통과했습니다. 최신 브랜드의 APK 설치/실기기 검증은 아직 완료하지 않았으며 이전 다운로드 APK에는 이번 변경이 포함되지 않습니다. 자세한 범위와 다음 순서는 [IMAGINE 제품 방향](imagine-product-direction.md)에 있습니다.
