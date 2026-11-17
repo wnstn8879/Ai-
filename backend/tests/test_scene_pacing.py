@@ -35,7 +35,7 @@ def test_provider_receives_pacing_from_full_history_and_preserves_user_request(
     response.json.return_value = {
         "choices": [{"message": {"content": "잠시 숨을 돌렸다."}}]
     }
-    with patch("app.story_ai.httpx.AsyncClient") as factory:
+    with patch("app.llm.httpx.AsyncClient") as factory:
         client = factory.return_value.__aenter__.return_value
         client.post = AsyncMock(return_value=response)
         assert (

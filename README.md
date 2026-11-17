@@ -81,3 +81,7 @@ GitHub Actions에서 SQLite/PostgreSQL 회귀 테스트, 모바일 세션 테스
 ## Windows PC + Android USB 실행
 
 [다운로드와 실행 안내](docs/windows-android.md)를 따라 `Start-StoryVerse-Windows.cmd`를 실행하세요. 개인용 서버와 Metro를 시작하고 휴대폰에 개발 APK를 설치합니다. USB 연결을 유지해야 합니다.
+
+## 오픈소스 스토리 AI
+
+Qwen3를 Ollama 또는 OpenAI 호환 서버로 연결할 수 있습니다. 기존 OpenAI 동작을 유지하며 환경변수로 선택합니다. 실제 경량 Qwen 모델로 인증된 생성→저장→분기를 확인했습니다. [설치·모델 선택·검증 결과·남은 배포 작업](docs/open-source-ai.md)을 확인하세요. 기존 기기 체험 APK에는 실제 AI 연결이 포함되지 않습니다.

@@ -163,7 +163,7 @@ def test_state_change_during_ai_generation_rejects_stale_response(account):
 
 def test_ai_receives_character_context_from_restored_snapshot(account, monkeypatch):
     import httpx
-    from app.story_ai import httpx as provider_http
+    from app.llm import httpx as provider_http
 
     client, _ = account()
     rid = create(client)
@@ -187,7 +187,7 @@ def test_ai_receives_character_context_from_restored_snapshot(account, monkeypat
 
     original = provider_http.AsyncClient
     with patch(
-        "app.story_ai.httpx.AsyncClient",
+        "app.llm.httpx.AsyncClient",
         side_effect=lambda **kwargs: original(
             transport=httpx.MockTransport(respond), **kwargs
         ),

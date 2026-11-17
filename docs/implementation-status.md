@@ -120,3 +120,11 @@ PC·USB·Metro·로그인·인터넷 없이 여는 별도 `com.storyverse.ai.pre
 브랜드를 IMAGINE / Your Story, Your World, Your Choice.로 정리하고 ‘상상을 세계로 만들고 친구와 함께 탐험’하는 방향을 홈과 시작 화면에 반영했습니다. 온라인 세계 생성에 배경/첫 사건과 탐험 목표를 추가해 기존 world_rules와 상태 스냅샷·AI 문맥·분기 보존에 연결했습니다. 소설 생성·읽기·게임 전환·작품 공유는 미구현 단계로 구분합니다.
 
 변경 파일은 App.js, OfflinePreview.js, app.json, app.config.js와 README 및 제품 방향 문서입니다. 서버 DB/마이그레이션 변경은 없으며 Android 패키지·SQLite 파일·세션 키를 유지합니다. 모바일 테스트 33개와 Android 번들 생성이 통과했습니다. 최신 브랜드의 APK 설치/실기기 검증은 아직 완료하지 않았으며 이전 다운로드 APK에는 이번 변경이 포함되지 않습니다. 자세한 범위와 다음 순서는 [IMAGINE 제품 방향](imagine-product-direction.md)에 있습니다.
+
+## 오픈소스 스토리 AI 어댑터와 실제 추론
+
+공식 Qwen/Ollama 문서와 모델 라이선스를 확인하고 Qwen3 + Ollama를 선택했습니다. `backend/app/llm.py`에서 openai(기존 기본)·ollama·openai_compatible 공급자를 환경변수로 선택합니다. 공통 스토리 문맥·장면 지침·기존 원자적 턴/영수증/저장/분기를 유지하며, 타 공급자에 OpenAI 키를 자동 전달하거나 실패 시 자동 유료 전환하지 않습니다. `.env.example`, 로컬 서버 환경변수 허용 목록, 추론 Compose와 재현 스크립트를 추가했습니다. DB 스키마/마이그레이션 변경은 없습니다.
+
+백엔드 pytest 56개가 통과했습니다. 초기 회귀에서 이동된 HTTP 모듈을 가리키던 테스트 import 오류 1개가 발생했고 새 어댑터 경로로 수정 후 모두 통과했습니다. 실제 Ollama 0.40.16 + qwen3:1.7b를 사용해 인증된 생성 API(24.45초), 대화 저장·중복 요청 캐시·체크포인트 재개·원본 보존 분기를 확인했습니다. [실제 결과 JSON](validation/qwen-real-smoke.json)에 테스트 세계의 응답과 검증 범위를 기록했으며 토큰/키는 없습니다.
+
+4B Instruct의 짧은 직접 요청은 성공했으나 최초 전체 프롬프트는 CPU에서 40초 제한에 걸렸습니다. 경량 모델 문장은 어색한 부분이 있어 서비스 품질 완료로 표시하지 않습니다. 실제 vLLM/OpenAI 호출·상시 GPU/HTTPS 서비스·Android 온라인 AI 검증은 미완료입니다. 기존 기기 체험 APK에는 새 AI 연결이 포함되지 않습니다. [실행·출처·오류 처리·제한](open-source-ai.md)을 확인하세요.

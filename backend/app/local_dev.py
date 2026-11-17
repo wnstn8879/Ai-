@@ -25,6 +25,12 @@ def main():
         if (
             name
             in {
+                "AI_PROVIDER",
+                "AI_MODEL",
+                "AI_BASE_URL",
+                "AI_API_KEY",
+                "AI_MAX_OUTPUT_TOKENS",
+                "AI_REQUEST_TIMEOUT_SECONDS",
                 "OPENAI_API_KEY",
                 "OPENAI_MODEL",
                 "AI_USER_DAILY_LIMIT",
