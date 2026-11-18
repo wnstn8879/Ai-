@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "package": "com.storyverse.ai.preview",
+  "metro_running": false,
+  "backend_running": false,
+  "airplane_mode": true,
+  "physical_device_tested": false,
+  "verified": [
+    "standalone launch",
+    "authored choice",
+    "automatic save",
+    "draft process restart",
+    "checkpoint",
+    "message branch",
+    "original and branch in library",
+    "library process restart",
+    "four-choice mystery completion"
+  ]
+}
