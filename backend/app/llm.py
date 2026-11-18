@@ -16,6 +16,7 @@ class Provider:
     key: str
     timeout: float
     tokens: int
+    threads: int | None = None
 
 
 def configuration():
@@ -50,13 +51,26 @@ def configuration():
         )
         timeout = float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "40"))
         tokens = int(os.getenv("AI_MAX_OUTPUT_TOKENS", "500"))
-        if not valid or not model or not 1 <= timeout <= 40 or not 64 <= tokens <= 1000:
+        threads = (
+            int(os.environ["AI_OLLAMA_NUM_THREADS"])
+            if name == "ollama" and os.getenv("AI_OLLAMA_NUM_THREADS")
+            else None
+        )
+        if (
+            not valid
+            or not model
+            or not 1
+            <= timeout
+            <= (180 if os.getenv("IMAGINE_WEB_GATEWAY_ONLY") == "1" else 40)
+            or not 64 <= tokens <= 1000
+            or (threads is not None and not 1 <= threads <= 128)
+        ):
             raise ValueError("Invalid provider config")
         if name == "openai" and not key.strip():
             raise ValueError("Missing OpenAI key")
     except (ValueError, TypeError):
         raise HTTPException(503, "AI service is not configured correctly") from None
-    return Provider(name, model, base, key, timeout, tokens)
+    return Provider(name, model, base, key, timeout, tokens, threads)
 
 
 async def complete(messages):
@@ -71,6 +85,8 @@ async def complete(messages):
             "think": False,
             "options": {"temperature": 0.8, "num_predict": cfg.tokens, "num_ctx": 8192},
         }
+        if cfg.threads is not None:
+            payload["options"]["num_thread"] = cfg.threads
     else:
         endpoint = cfg.base_url + "/chat/completions"
         payload = {

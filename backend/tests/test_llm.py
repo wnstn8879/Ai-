@@ -19,6 +19,8 @@ def clean_config(monkeypatch):
         "AI_API_KEY",
         "AI_REQUEST_TIMEOUT_SECONDS",
         "AI_MAX_OUTPUT_TOKENS",
+        "AI_OLLAMA_NUM_THREADS",
+        "IMAGINE_WEB_GATEWAY_ONLY",
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ]:
@@ -190,3 +192,34 @@ def test_real_adapter_path_preserves_api_atomicity_and_branching(account, monkey
     )
     assert failed.status_code == 502 and "private internal details" not in failed.text
     assert len(client.get(path).json()["messages"]) == 2
+
+
+def test_extended_timeout_only_in_explicit_private_web_gateway(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "ollama")
+    monkeypatch.setenv("AI_REQUEST_TIMEOUT_SECONDS", "180")
+    with pytest.raises(HTTPException):
+        llm.configuration()
+    monkeypatch.setenv("IMAGINE_WEB_GATEWAY_ONLY", "1")
+    assert llm.configuration().timeout == 180
+
+
+def test_ollama_cpu_quota_setting_reaches_model_without_affecting_other_providers(
+    monkeypatch,
+):
+    monkeypatch.setenv("AI_PROVIDER", "ollama")
+    monkeypatch.setenv("AI_OLLAMA_NUM_THREADS", "2")
+
+    def handler(req):
+        assert json.loads(req.content)["options"]["num_thread"] == 2
+        return httpx.Response(
+            200, json={"message": {"content": "첫 장면."}, "done": True}
+        )
+
+    transport(monkeypatch, handler)
+    assert asyncio.run(llm.complete([])) == "첫 장면."
+    monkeypatch.setenv("AI_OLLAMA_NUM_THREADS", "0")
+    with pytest.raises(HTTPException):
+        llm.configuration()
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    assert llm.configuration().threads is None

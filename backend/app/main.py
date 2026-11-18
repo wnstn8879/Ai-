@@ -26,8 +26,25 @@ from app.story_state import (
 )
 
 app = FastAPI(title="IMAGINE API", version="0.3.0")
+
+
+@app.middleware("http")
+async def private_site_gateway(request, call_next):
+    import os
+    from fastapi.responses import JSONResponse
+    from app.site_identity import valid_service_key
+
+    if os.getenv("IMAGINE_WEB_GATEWAY_ONLY") == "1" and request.url.path != "/health":
+        if not valid_service_key(request):
+            return JSONResponse(
+                {"detail": "Private gateway authentication required"}, status_code=401
+            )
+    return await call_next(request)
+
+
 from app.security import (
     current_user,
+    token_user,
     RoomMember,
     SaveOwner,
     lock_room,
@@ -105,6 +122,14 @@ class MessageCreate(BaseModel):
 class ForkCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     message_index: int = Field(ge=0)
+
+
+class PassageRewrite(BaseModel):
+    message_id: str = Field(min_length=1, max_length=64)
+    start: int = Field(ge=0)
+    end: int = Field(ge=1)
+    selected_text: str = Field(min_length=1, max_length=20000)
+    title: str = Field(min_length=1, max_length=120)
 
 
 class SaveCreate(BaseModel):
@@ -265,6 +290,51 @@ def fork_room(room_id: str, data: ForkCreate, user_id: str = Depends(current_use
             data.title,
             user_id,
         )
+
+
+@app.post("/rooms/{room_id}/rewrite")
+def rewrite_passage(
+    room_id: str, data: PassageRewrite, user_id: str = Depends(current_user)
+):
+    with Session.begin() as db:
+        parent = require_room(db, room_id, user_id)
+        lock_room(db, room_id)
+        if parent.narrative_format != "novel":
+            raise HTTPException(400, "Passage rewriting requires a novel")
+        messages = msgs(db, room_id)
+        index = next(
+            (
+                i
+                for i, m in enumerate(messages)
+                if m.id == data.message_id and m.actor == "AI"
+            ),
+            None,
+        )
+        if index is None:
+            raise HTTPException(400, "Novel passage not found")
+        source = messages[index].content
+        if (
+            data.end <= data.start
+            or data.end > len(source)
+            or source[data.start : data.end] != data.selected_text
+            or not data.selected_text.strip()
+        ):
+            raise HTTPException(400, "Selected passage does not match saved text")
+        result = branch(db, parent, index, data.title, user_id)
+        prefix = source[: data.start]
+        if prefix.strip():
+            db.add(
+                Message(
+                    id=uid(),
+                    room_id=result["id"],
+                    position=index,
+                    actor="AI",
+                    content=prefix,
+                    created_at=now(),
+                )
+            )
+            db.flush()
+        return room_out(db, db.get(Room, result["id"]))
 
 
 @app.post("/rooms/{room_id}/saves")
@@ -478,7 +548,7 @@ async def live_room(socket: WebSocket, room_id: str):
     await socket.accept()
     try:
         auth = await asyncio.wait_for(socket.receive_json(), timeout=10)
-        user_id = current_user(
+        user_id = token_user(
             HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=auth.get("access_token", "")
             )
@@ -486,7 +556,7 @@ async def live_room(socket: WebSocket, room_id: str):
         previous = None
         while True:
             # Re-check revocation, expiry and membership on every update, across workers.
-            current_user(
+            token_user(
                 HTTPAuthorizationCredentials(
                     scheme="Bearer", credentials=auth.get("access_token", "")
                 )

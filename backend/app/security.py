@@ -95,7 +95,18 @@ def password_matches(value, stored):
     )
 
 
-def current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+def current_user(
+    request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)
+):
+    from app.site_identity import service_user
+
+    trusted = service_user(request)
+    if trusted is not None:
+        return trusted
+    return token_user(credentials)
+
+
+def token_user(credentials):
     if credentials is None:
         raise HTTPException(
             401, "Login required", headers={"WWW-Authenticate": "Bearer"}
