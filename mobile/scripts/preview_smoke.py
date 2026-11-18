@@ -40,9 +40,11 @@ def find(label, scroll=False, timeout=45):
         except (subprocess.SubprocessError, ET.ParseError):
             time.sleep(0.5)
             continue
+        target = None
         for n in nodes.iter("node"):
             if label in (n.get("text"), n.get("content-desc")):
-                coords = [int(x) for x in re.findall(r"\d+", n.get("bounds", ""))]
+                coords = [int(x) for x in re.findall(r"-?\d+", n.get("bounds", ""))]
+                target = coords
                 if len(coords) == 4 and coords[2] > coords[0] and coords[3] > coords[1]:
                     return coords
         if scroll:
@@ -51,7 +53,7 @@ def find(label, scroll=False, timeout=45):
             candidates = []
             for view in nodes.iter("node"):
                 if view.get("class") == "android.widget.ScrollView":
-                    b = [int(x) for x in re.findall(r"\d+", view.get("bounds", ""))]
+                    b = [int(x) for x in re.findall(r"-?\d+", view.get("bounds", ""))]
                     if len(b) == 4 and b[3] - b[1] > 100:
                         candidates.append(b)
             if candidates:
@@ -59,11 +61,18 @@ def find(label, scroll=False, timeout=45):
                     candidates, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])
                 )
                 x = (left + right) // 2
-                low, high = top + (bottom - top) * 3 // 4, top + (bottom - top) // 4
+                # Small, slow swipes overlap viewports instead of flinging past a target.
+                low, high = top + (bottom - top) * 2 // 3, top + (bottom - top) // 3
             else:
                 x, low, high = 500, 1300, 850
-            start, end = (low, high) if attempts % 16 < 8 else (high, low)
-            adb("shell", "input", "swipe", str(x), str(start), str(x), str(end), "160")
+            downward = attempts % 16 < 8
+            if candidates and target and len(target) == 4:
+                if max(target[1], target[3]) <= top:
+                    downward = False
+                elif min(target[1], target[3]) >= bottom:
+                    downward = True
+            start, end = (low, high) if downward else (high, low)
+            adb("shell", "input", "swipe", str(x), str(start), str(x), str(end), "500")
         attempts += 1
         time.sleep(0.3)
     raise AssertionError("Missing native element: " + label)
