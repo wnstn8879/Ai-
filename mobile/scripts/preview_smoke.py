@@ -46,8 +46,24 @@ def find(label, scroll=False, timeout=45):
                 if len(coords) == 4 and coords[2] > coords[0] and coords[3] > coords[1]:
                     return coords
         if scroll:
-            start, end = (1250, 450) if attempts < 8 else (450, 1250)
-            adb("shell", "input", "swipe", "500", str(start), "500", str(end), "160")
+            # Start inside the actual scroll area. The fixed story header can
+            # extend below y=450, so a swipe starting there never scrolls up.
+            candidates = []
+            for view in nodes.iter("node"):
+                if view.get("class") == "android.widget.ScrollView":
+                    b = [int(x) for x in re.findall(r"\d+", view.get("bounds", ""))]
+                    if len(b) == 4 and b[3] - b[1] > 100:
+                        candidates.append(b)
+            if candidates:
+                left, top, right, bottom = max(
+                    candidates, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])
+                )
+                x = (left + right) // 2
+                low, high = top + (bottom - top) * 3 // 4, top + (bottom - top) // 4
+            else:
+                x, low, high = 500, 1300, 850
+            start, end = (low, high) if attempts % 16 < 8 else (high, low)
+            adb("shell", "input", "swipe", str(x), str(start), str(x), str(end), "160")
         attempts += 1
         time.sleep(0.3)
     raise AssertionError("Missing native element: " + label)
