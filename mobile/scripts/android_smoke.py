@@ -162,6 +162,7 @@ def install_launch(apk):
 def restart_app():
     adb("shell", "am", "force-stop", PACKAGE)
     adb("shell", "am", "start", "-n", PACKAGE + "/.MainActivity")
+    tap("홈")
 
 
 def login(email):
@@ -174,6 +175,7 @@ def login(email):
     adb("shell", "input", "text", PASSWORD)
     hide_keyboard()
     tap("로그인", True)
+    tap("홈")
 
 
 def start_peer():

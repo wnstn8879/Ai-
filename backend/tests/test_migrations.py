@@ -20,8 +20,11 @@ def test_adopt_legacy_database_preserves_private_records(tmp_path):
         assert db.execute("SELECT title FROM rooms").fetchone()[0] == "Old world"
         assert db.execute("SELECT count(*) FROM room_members").fetchone()[0] == 0
         assert (
+            db.execute("SELECT narrative_format FROM rooms").fetchone()[0] == "roleplay"
+        )
+        assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "005_shared_restores"
+            == "006_novel_format"
         )
 
 
@@ -56,3 +59,6 @@ def test_upgrade_existing_checkpoints_pins_legacy_world_state(tmp_path):
         assert state["world_rules"] == "Keep magic cost"
         assert state["characters"][0]["name"] == "Knight"
         assert db.execute("SELECT count(*) FROM room_members").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT narrative_format FROM rooms").fetchone()[0] == "roleplay"
+        )

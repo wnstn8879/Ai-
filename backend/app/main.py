@@ -1,6 +1,7 @@
 import json
 import asyncio
 import hashlib
+from typing import Literal
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, or_
@@ -24,7 +25,7 @@ from app.story_state import (
     StoryState,
 )
 
-app = FastAPI(title="StoryVerse AI API", version="0.3.0")
+app = FastAPI(title="IMAGINE API", version="0.3.0")
 from app.security import (
     current_user,
     RoomMember,
@@ -61,6 +62,7 @@ def room_out(db, room):
         "story_state": state,
         "state_revision": snapshot.revision,
         "mode": room.mode,
+        "narrative_format": room.narrative_format,
         "parent_room_id": room.parent_room_id,
         "fork_message_index": room.fork_message_index,
         "messages": [
@@ -82,6 +84,7 @@ class RoomCreate(BaseModel):
     world_rules: str = Field(min_length=1, max_length=20000)
     characters: list[str] = Field(default_factory=list, max_length=30)
     mode: str = Field(default="solo", pattern="^(solo|multiplayer)$")
+    narrative_format: Literal["roleplay", "novel"] = "roleplay"
 
     @model_validator(mode="after")
     def valid_initial_state(self):
@@ -141,6 +144,7 @@ def create_room(data: RoomCreate, user_id: str = Depends(current_user)):
             world_rules=data.world_rules,
             characters_json=json.dumps(data.characters, ensure_ascii=False),
             mode=data.mode,
+            narrative_format=data.narrative_format,
             created_at=now(),
         )
         db.add(r)
@@ -206,6 +210,7 @@ def branch(
         world_rules=parent.world_rules,
         characters_json=parent.characters_json,
         mode="multiplayer" if shared else "solo",
+        narrative_format=parent.narrative_format,
         parent_room_id=parent.id,
         fork_message_index=index,
         created_at=now(),

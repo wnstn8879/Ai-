@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import OutboxPanel from "./OutboxPanel";
+import NovelStudio from "./NovelStudio";
 import OfflinePreview from "./OfflinePreview";
 import { useOutbox, useRoomDraft } from "./useOutbox";
 import SharedRestores from "./SharedRestores";
@@ -54,7 +55,9 @@ function StoryVerseApp({ onTryOffline }) {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [name, setName] = useState("");
-  const [tab, setTab] = useState("home"),
+  const [novelRefresh, setNovelRefresh] = useState(0);
+  const [novelToOpen, setNovelToOpen] = useState(null);
+  const [tab, setTab] = useState("novels"),
     [rooms, setRooms] = useState([]),
     [room, setRoom] = useState(null),
     [saves, setSaves] = useState([]),
@@ -82,6 +85,7 @@ function StoryVerseApp({ onTryOffline }) {
     roomRef = useRef(null);
   roomRef.current = room?.id;
   const outbox = useOutbox(user, async (userId, roomId) => {
+    if (accountRef.current === userId) setNovelRefresh((v) => v + 1);
     if (accountRef.current === userId && roomRef.current === roomId) {
       try {
         await open(roomId, true);
@@ -106,7 +110,8 @@ function StoryVerseApp({ onTryOffline }) {
     setInviteCode("");
     setError("");
     setNotice("");
-    setTab("home");
+    setTab("novels");
+    setNovelToOpen(null);
   };
   const run = async (fn) => {
     if (busyRef.current) return false;
@@ -140,6 +145,12 @@ function StoryVerseApp({ onTryOffline }) {
     if (expected !== accountRef.current)
       throw new Error("계정이 변경되었습니다.");
     if (onlyIfCurrent && roomRef.current !== id) return;
+    if (r.narrative_format === "novel") {
+      setRoom(null);
+      setNovelToOpen(r.id);
+      setTab("novels");
+      return;
+    }
     setRoom(r);
     setSaves(s);
     setMembers(m);
@@ -614,6 +625,14 @@ function StoryVerseApp({ onTryOffline }) {
                 </>
               )}
             </>
+          ) : tab === "novels" ? (
+            <NovelStudio
+              key={user.id}
+              initialRoomId={novelToOpen}
+              onList={() => setNovelToOpen(null)}
+              outbox={outbox}
+              refreshKey={novelRefresh}
+            />
           ) : tab === "friends" ? (
             <>
               <Text style={styles.hero}>함께할 친구</Text>
@@ -826,6 +845,7 @@ function StoryVerseApp({ onTryOffline }) {
           <View style={styles.nav}>
             {[
               ["home", "홈"],
+              ["novels", "소설 창작"],
               ["library", "보관함"],
               ["friends", "친구"],
               ["settings", "설정"],

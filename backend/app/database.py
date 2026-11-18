@@ -36,6 +36,9 @@ class Room(Base):
     world_rules: Mapped[str] = mapped_column(Text)
     characters_json: Mapped[str] = mapped_column(Text, default="[]")
     mode: Mapped[str] = mapped_column(String(20), default="solo")
+    narrative_format: Mapped[str] = mapped_column(
+        String(16), default="roleplay", server_default="roleplay"
+    )
     parent_room_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     fork_message_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[str] = mapped_column(String(40))
