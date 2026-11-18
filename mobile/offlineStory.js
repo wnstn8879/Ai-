@@ -1,3 +1,4 @@
+import { start, step, optionsFor } from "./commuteStory";
 // Authored preview story, deliberately not presented as generated AI.
 export const INTRO =
   "출근길 지하철. 빈 좌석 위에 당신의 이름이 적힌 봉투가 놓여 있다. 다음 역까지 3분. 봉투에는 ‘종점 전에 선택하세요’라고 적혀 있다.";
@@ -15,7 +16,8 @@ const scenes = [
     choices: ["편지를 받아 읽는다", "오늘은 일상으로 돌아간다"],
   },
 ];
-export function opening(id, title, now) {
+export function opening(id, title, now, version = 1) {
+  if (version === 2) return start(id, title, now);
   const state = { scene: 0, ending: false };
   return {
     id,
@@ -36,12 +38,14 @@ export function opening(id, title, now) {
   };
 }
 export function choicesFor(room) {
+  if (room.storyVersion === 2) return optionsFor(room);
   if (room.state.ending) return ["다음 짧은 장면을 시작한다"];
   if (room.state.scene === 0)
     return ["봉투를 열어본다", "주변에 봉투 주인이 있는지 살핀다"];
   return scenes[Math.min(room.state.scene - 1, scenes.length - 1)].choices;
 }
 export function advance(room, text, id, now) {
+  if (room.storyVersion === 2) return step(room, text, id, now);
   const content = text.trim();
   if (!content || content.length > 1000)
     throw new Error("행동을 1~1000자로 입력해주세요.");
@@ -80,4 +84,21 @@ export function advance(room, text, id, now) {
   });
   next.updatedAt = now;
   return next;
+}
+
+export function brief(room) {
+  const last = [...room.messages].reverse().find((m) => m.actor !== "나");
+  return {
+    recap: last?.content.slice(0, 120) || "새로운 시작",
+    savedAt: room.updatedAt,
+    progress:
+      room.storyVersion === 2
+        ? room.state.ending
+          ? "이번 사건 완료"
+          : `${room.state.scene}/4 선택 · 편지의 주인 찾기`
+        : room.state.ending
+          ? "장면 마무리"
+          : "진행 중",
+    clues: room.storyVersion === 2 ? room.state.clues || [] : [],
+  };
 }

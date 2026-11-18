@@ -17,7 +17,7 @@ import { StatusBar } from "expo-status-bar";
 import * as SQLite from "expo-sqlite";
 import * as Crypto from "expo-crypto";
 import { createOfflineStore } from "./offlineStore";
-import { choicesFor } from "./offlineStory";
+import { choicesFor, brief } from "./offlineStory";
 import { useRoomDraft } from "./useOutbox";
 const scope = { api: "offline://storyverse-preview", userId: "device" };
 let opening;
@@ -136,6 +136,7 @@ export default function OfflinePreview({ onExit }) {
       <Text style={styles.buttonText}>{label}</Text>
     </Pressable>
   );
+  const summary = room ? brief(room) : null;
   const message = (m, i) => (
     <View key={m.id} style={[styles.message, m.actor === "나" && styles.mine]}>
       <Text style={styles.actor}>{m.actor}</Text>
@@ -193,6 +194,13 @@ export default function OfflinePreview({ onExit }) {
               선택으로 분기할 수 있어요. 이 기기 체험판은 준비된 이야기로
               진행합니다.
             </Text>
+            <View style={styles.card}>
+              <Text style={styles.title}>첫 사건: 수상한 봉투</Text>
+              <Text style={styles.muted}>
+                미스터리 · 최대 네 번의 선택 · 네 가지 결말. 설정 입력 없이 바로
+                시작하세요. 실제 소요 시간은 읽는 속도에 따라 달라집니다.
+              </Text>
+            </View>
             {button(
               "새 이야기 시작",
               () => run(async () => open(await store.create())),
@@ -211,8 +219,14 @@ export default function OfflinePreview({ onExit }) {
               <View key={r.id} style={styles.card}>
                 <Text style={styles.title}>{r.title}</Text>
                 <Text style={styles.muted}>
-                  {r.messages.length}개 메시지 ·{" "}
-                  {r.state.ending ? "장면 마무리" : "진행 중"}
+                  {brief(r).progress} · {r.messages.length}개 메시지
+                </Text>
+                <Text style={styles.small}>
+                  저장 확인 ·{" "}
+                  {new Date(brief(r).savedAt).toLocaleString("ko-KR")}
+                </Text>
+                <Text style={styles.muted} numberOfLines={3}>
+                  {brief(r).recap}
                 </Text>
                 {r.parentId && (
                   <Text style={styles.muted}>
@@ -222,6 +236,12 @@ export default function OfflinePreview({ onExit }) {
                     의 {r.forkIndex}번째 메시지에서 분기
                   </Text>
                 )}
+                {r.parentId &&
+                  button(
+                    "원본 이야기 보기",
+                    () => run(async () => open(await store.get(r.parentId))),
+                    true,
+                  )}
                 {button(
                   "이어서 플레이",
                   () => run(async () => open(await store.get(r.id))),
@@ -247,8 +267,14 @@ export default function OfflinePreview({ onExit }) {
               </Pressable>
               <Text style={styles.title}>{room.title}</Text>
               <Text style={styles.small}>
-                자동 저장 ·{" "}
-                {room.state.ending ? "이번 장면 완료" : "짧은 장면 진행 중"}
+                {summary.progress} · 기기에 자동 저장
+              </Text>
+              <Text style={styles.small}>
+                저장 확인 ·{" "}
+                {new Date(summary.savedAt).toLocaleTimeString("ko-KR")}
+                {summary.clues.length
+                  ? " · 단서 " + summary.clues.join(", ")
+                  : ""}
               </Text>
             </View>
             <ScrollView
@@ -267,10 +293,13 @@ export default function OfflinePreview({ onExit }) {
                   {button(choice, () => send(choice), true, !draft.ready)}
                 </View>
               ))}
+              {room.storyVersion === 2 &&
+                room.state.ending &&
+                button("첫 장면에서 다른 선택", () => fork(1), true)}
               {room.state.ending && (
                 <Text style={styles.muted}>
-                  원하면 다음 장면을 이어가거나 타임라인에서 다른 선택을
-                  해보세요.
+                  이번 사건의 기록은 보존됩니다. 타임라인에서 원하는 장면으로
+                  분기하거나 보관함에서 이어갈 수 있어요.
                 </Text>
               )}
               {button("저장하고 쉬기", () => save(true))}

@@ -1,3 +1,4 @@
+import { initialState } from "./commuteStory";
 import { opening, advance } from "./offlineStory";
 export function createOfflineStore(
   db,
@@ -45,7 +46,9 @@ export function createOfflineStore(
     room.messages = room.messages.slice(0, index);
     room.state = index
       ? room.messages[index - 1].stateAfter
-      : { scene: 0, ending: false };
+      : source.storyVersion === 2
+        ? initialState()
+        : { scene: 0, ending: false };
     return write(tx, room).then(() => room);
   };
   return {
@@ -84,9 +87,9 @@ export function createOfflineStore(
         ).map((r) => JSON.parse(r.payload)),
       ),
     get: (id) => serial(() => get(db, id)),
-    create: () =>
+    create: (version = 2) =>
       mutate(async (tx) => {
-        const room = opening(uuid(), "출근길의 수상한 봉투", clock());
+        const room = opening(uuid(), "출근길의 수상한 봉투", clock(), version);
         await write(tx, room);
         return room;
       }),

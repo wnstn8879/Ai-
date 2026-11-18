@@ -102,6 +102,11 @@ def main():
     screen("05-branch")
     tap("주변에 봉투 주인이 있는지 살핀다", scroll=True)
     find("기기에 자동 저장됨")
+    tap("역무원에게 봉투 주인을 묻는다", scroll=True)
+    tap("편지함으로 간다", scroll=True)
+    tap("편지를 주인에게 돌려준다", scroll=True)
+    find("여기서 쉬어가도 좋아요", scroll=True)
+    screen("06a-mystery-complete")
     tap("저장하고 쉬기", scroll=True)
     find("저장했어요. 다음 출근길에 이어가세요.")
     find("출근길의 수상한 봉투 · 다른 선택", scroll=True)
@@ -129,6 +134,7 @@ def main():
                     "message branch",
                     "original and branch in library",
                     "library process restart",
+                    "four-choice mystery completion",
                 ],
             },
             indent=2,
