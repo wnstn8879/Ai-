@@ -7,3 +7,11 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.pyc
+
+*.db
+
+/mobile/android/
+/mobile/dist/
+
+.runtime/
+app-debug.apk

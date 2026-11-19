@@ -1,0 +1,30 @@
+{
+  "status": 200,
+  "elapsed_seconds": 147.54,
+  "model": "qwen3:4b-instruct",
+  "actual_model": true,
+  "response": {
+    "user_message": {
+      "id": "bae6c4f3-e1f4-4292-8fcb-0d24c3bfba1a",
+      "actor": "작가",
+      "content": "모든 조합을 살려 인물의 감정과 갈등이 있는 첫 소설 장면을 짧은 두 문단으로 써줘."
+    },
+    "ai_message": {
+      "id": "a22848ca-b126-4020-a68d-203792e15344",
+      "actor": "AI",
+      "content": "달빛이 반사되는 흙길 위, 김치를 빠르게 발효시키는 김치 마스터 김서진은 흙에 쓰인 날개를 떼어내며 흐릿한 웃음을 짓는다. \"이걸로 내공이 흘러나오면, 어쩌면 총을 쥐는 좀비도 뒤돌아보게 될지도 몰라.\" 그의 눈에는 동생이 사라진 것처럼 무게가 느껴진다.  \n\n\"그리고 너도 내 곁에 있었던 걸 알아?\" 그는 낯선 동료의 손을 잡고, 김치 냄새가 퍼진 공기 속에서 말한다. \"내가 믿는 건, 김치가 죽은 자를 살리는 법을 알게 해주는 거야.\"  \n\n그 순간, 발효된 김치가 흙 속에서 빛을 비추며, 그의 손끝에서 냉기와 따뜻함이 동시에 흘렀다."
+    }
+  },
+  "passage_rewrite_preserved_original": true,
+  "validation_scope": "Actual local FastAPI + Ollama model; browser and full hosted UI not tested.",
+  "runtime": {
+    "cpu_quota": 2,
+    "ollama_num_threads": 2,
+    "max_output_tokens": 500,
+    "timeout_seconds": 180
+  },
+  "notes": [
+    "Earlier 40s and 180s runs timed out before CPU thread/prompt tuning.",
+    "Generated prose needs editorial and user quality evaluation; success is not a quality guarantee."
+  ]
+}

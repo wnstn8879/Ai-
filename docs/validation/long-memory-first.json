@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "actual_model": "qwen3:4b-instruct",
+  "source_records": 3000,
+  "index_batches": 24,
+  "index_seconds": 2.65,
+  "generation_seconds": 125.64,
+  "source_search_exact": true,
+  "reader_page_records": 30,
+  "context_report": {
+    "input_utf8_bound": 5270,
+    "input_budget": 7180,
+    "window_tokens": 8192,
+    "recent_messages": 21,
+    "history_messages_not_in_recent": 2979,
+    "sources": [
+      {
+        "message_id": "6ab1b57d-82c5-4c8c-88f9-b3823d278613",
+        "position": 1,
+        "actor": "AI",
+        "start": 0,
+        "end": 28,
+        "quote": "서연은 별빛 열쇠를 동생에게만 맡기겠다고 약속했다."
+      }
+    ],
+    "method": "lexical_source_quotes",
+    "warning": "검색은 관련 후보입니다. 확정 설정을 우선하며 원문 확인이 필요합니다.",
+    "total_messages": 3000
+  },
+  "generated_prose": "서연은 손에 총을 잡은 좀비를 바라보며 숨을 멈추었다. \"나는 그때 동생에게 '별빛 열쇠는 네가 필요할 때만 열어야 한다'고 말했어. 그 약속이 끝나지 않았어.\"  \n좀비는 눈을 뜨고, \"내가 네가 보호해 줬던 그날처럼, 네가 내게 말을 걸어줬으면\"이라고 중얼했다.  \n서연의 손이 떨렸고, 그녀는 총을 내려놓았다. \"나는 그 약속을 지키기 위해, 네가 끝나도 괜찮아.\"",
+  "retry_reused_result": true,
+  "evaluation": {
+    "retrieval_and_bounded_input": "passed",
+    "generation_factual_consistency": "needs_improvement",
+    "observed_issue": "Generated dialogue changed the old promise from entrusting the key only to the sibling into opening it only when needed. Correct retrieval does not guarantee correct generation."
+  }
+}

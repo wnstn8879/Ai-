@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "provider": "ollama",
+  "model": "qwen3:1.7b",
+  "elapsed_seconds": 24.45,
+  "reply": "역무원은 문을 힘없이 열고, 문 밖에서 들리는 발소리에 집중했다. \"이곳에 왜 왔어?\"라고 질문했다. 그의 입술은 빠르게 움직이며, 눈에는 빠져 있었다.",
+  "checks": [
+    "real inference through authenticated turns API",
+    "atomic user + AI persistence",
+    "same request id returns stored result",
+    "checkpoint + branch preserve model response",
+    "original history unchanged"
+  ],
+  "public_deployment": false,
+  "mobile_device_tested": false
+}

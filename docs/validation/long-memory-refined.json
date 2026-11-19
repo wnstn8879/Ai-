@@ -1,0 +1,38 @@
+{
+  "status": 200,
+  "actual_model": "qwen3:4b-instruct",
+  "source_records": 3000,
+  "index_batches": 24,
+  "index_seconds": 2.81,
+  "generation_seconds": 139.64,
+  "source_search_exact": true,
+  "reader_page_records": 30,
+  "context_report": {
+    "input_utf8_bound": 5557,
+    "input_budget": 7180,
+    "window_tokens": 8192,
+    "recent_messages": 21,
+    "history_messages_not_in_recent": 2979,
+    "sources": [
+      {
+        "message_id": "968c61f4-37bb-4fa0-8a9b-c234452226aa",
+        "position": 1,
+        "actor": "AI",
+        "start": 0,
+        "end": 28,
+        "quote": "서연은 별빛 열쇠를 동생에게만 맡기겠다고 약속했다."
+      }
+    ],
+    "method": "lexical_source_quotes",
+    "warning": "검색은 관련 후보입니다. 확정 설정을 우선하며 원문 확인이 필요합니다.",
+    "total_messages": 3000
+  },
+  "generated_prose": "서연이 기억에 남은 별빛 열쇠를 손에 쥐고, 눈을 떠보았다. \"서연은 별빛 열쇠를 동생에게만 맡기겠다고 약속했다.\" 그 말이 머릿속을 스쳐갔다. 총을 들고 서 있는 좀비가 그녀를 바라보며, 눈빛에 공포와 혼란이 섞여 있었다. 서연은 그의 눈을 바라보며 조용히 말했다. \"나는 약속을 지키는 사람이다. 그래서 네가 누구인지, 내 동생이 누구인지, 내가 믿을지 모르지만, 그 약속은 아직 살아있다.\" 좀비가 총을 흔들며 떨렸다. 그의 입에서 흐르는 소리가 마치 김치 발효가 끝날 때의 기분처럼, 부드럽고 무거웠다.",
+  "retry_reused_result": true,
+  "evaluation": {
+    "retrieval_and_bounded_input": "passed",
+    "tested_promise_verbatim": true,
+    "scope": "One synthetic 3,000-record case after prompt refinement; not general factual consistency or commercial prose quality validation.",
+    "previous_attempt": "See long-memory-first.json for the observed promise mutation."
+  }
+}

@@ -1,0 +1,66 @@
+name: Phone-only Android preview
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/android-preview.yml'
+jobs:
+  standalone-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_APP_VARIANT: preview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0 emulator
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+        working-directory: mobile
+      - run: npm test
+        working-directory: mobile
+      - run: npx expo prebuild --platform android --no-install
+        working-directory: mobile
+      - name: Build standalone internal preview with embedded JS
+        working-directory: mobile
+        run: ./android/gradlew -p android assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon --max-workers=2
+      - name: Prepare preview APK and checksum
+        run: |
+          mkdir -p preview
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk preview/StoryVerse-Preview.apk
+          cd preview
+          sha256sum StoryVerse-Preview.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storyverse-phone-only-preview
+          path: preview/
+      - name: Enable emulator acceleration
+        run: sudo chmod a+rw /dev/kvm
+      - name: Verify offline release without Metro or backend
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: python mobile/scripts/preview_smoke.py preview/StoryVerse-Preview.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storyverse-offline-preview-evidence
+          path: /tmp/storyverse-preview-qa/
