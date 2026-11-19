@@ -310,7 +310,12 @@ def branch(
 
 
 @app.post("/rooms/{room_id}/forks")
-def fork_room(room_id: str, data: ForkCreate, user_id: str = Depends(current_user)):
+def fork_room(
+    room_id: str,
+    data: ForkCreate,
+    compact: bool = False,
+    user_id: str = Depends(current_user),
+):
     with Session.begin() as db:
         return branch(
             db,
@@ -318,6 +323,7 @@ def fork_room(room_id: str, data: ForkCreate, user_id: str = Depends(current_use
             data.message_index,
             data.title,
             user_id,
+            compact=compact,
         )
 
 
@@ -670,3 +676,6 @@ app.include_router(memory_router)
 from app.story_reader import router as reader_router
 
 app.include_router(reader_router)
+from app.novel_writer import router as writer_router
+
+app.include_router(writer_router)

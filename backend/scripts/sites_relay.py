@@ -37,6 +37,7 @@ def execute(job):
             200 <= status < 300
             and job["method"] != "GET"
             and "/memory/" not in job["path"]
+            and "/writer" not in job["path"]
         ):
             paths = {"/library"}
             m = re.match(r"^/rooms/([A-Za-z0-9-]+)", job["path"])

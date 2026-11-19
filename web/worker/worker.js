@@ -9,7 +9,7 @@ const json = (data, status = 200) =>
     },
   });
 const route =
-  /^\/(library|rooms(?:\/[A-Za-z0-9-]+(?:\/(?:turns|forks|rewrite|saves|state|members|chapters|memory\/(?:index|search)))?)?|saves\/[A-Za-z0-9-]+\/resume)$/;
+  /^\/(library|rooms(?:\/[A-Za-z0-9-]+(?:\/(?:turns|forks|rewrite|saves|state|members|chapters|writer(?:\/(?:start|pause|keepalive|direction))?|memory\/(?:index|search)))?)?|saves\/[A-Za-z0-9-]+\/resume)$/;
 const cacheKey = (visitor, path) => JSON.stringify([visitor, path]);
 async function secure(request, env) {
   const key = request.headers.get("x-imagine-relay-key") || "";

@@ -174,3 +174,24 @@ class MemoryTerm(Base):
     )
     room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"))
     term: Mapped[str] = mapped_column(String(66), primary_key=True)
+
+
+class NovelWriter(Base):
+    """Durable current draft and foreground reading lease; completed prose stays in messages."""
+
+    __tablename__ = "novel_writers"
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    owner_token: Mapped[str] = mapped_column(String(36), default="")
+    status: Mapped[str] = mapped_column(String(20), default="paused")
+    draft: Mapped[str] = mapped_column(Text, default="")
+    pending_direction: Mapped[str] = mapped_column(Text, default="")
+    active_direction: Mapped[str] = mapped_column(Text, default="")
+    question: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    context_json: Mapped[str] = mapped_column(Text, default="{}")
+    completed: Mapped[int] = mapped_column(Integer, default=0)
+    batch_limit: Mapped[int] = mapped_column(Integer, default=4)
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    lease_until: Mapped[int] = mapped_column(Integer, default=0)
+    heartbeat: Mapped[int] = mapped_column(Integer, default=0)

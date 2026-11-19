@@ -27,10 +27,14 @@ def cost(messages):
     return sum(len(m["content"].encode("utf-8")) + 64 for m in messages)
 
 
-def pack(system, history, instruction, sources, positions=None):
+def pack(system, history, instruction, sources, positions=None, output_tokens=None):
     try:
-        output = int(os.getenv("AI_MAX_OUTPUT_TOKENS", "500"))
-        if not 64 <= output <= 1000:
+        output = (
+            output_tokens
+            if output_tokens is not None
+            else int(os.getenv("AI_MAX_OUTPUT_TOKENS", "500"))
+        )
+        if not 64 <= output <= (2400 if output_tokens is not None else 1000):
             raise ValueError
     except ValueError:
         raise HTTPException(503, "Invalid model output allowance") from None

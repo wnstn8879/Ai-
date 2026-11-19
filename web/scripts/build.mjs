@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { PAGE } from "../worker/page.js";
 // Dependency-free bundling: the page is a single JS string, no secret values.
 const entry = readFileSync("worker/worker.js", "utf8");
 const pageImport =
@@ -7,10 +8,7 @@ if (!pageImport.test(entry))
   throw new Error("Expected the page import in Worker entry");
 let source = entry.replace(
   pageImport,
-  readFileSync("worker/page.js", "utf8").replace(
-    "export const PAGE",
-    "const PAGE",
-  ),
+  () => "const PAGE = " + JSON.stringify(PAGE) + ";",
 );
 if (/^import\s/m.test(source))
   throw new Error("Bundle has unresolved runtime imports");

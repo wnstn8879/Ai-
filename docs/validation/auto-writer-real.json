@@ -1,0 +1,24 @@
+{
+  "model": "qwen3:4b-instruct",
+  "actual_model": true,
+  "first_visible_seconds": 36.51,
+  "paused_draft": "태양계의 한 측면, 지구의 옛날 농장에서 흩어진 김치 발효고리 속. 서연은 흙을 발에 묻히며, 발효조의 흐르는 기운을 느낀다. 그 기운은 흐르는 물처럼 흐르고, 그 안에는 어둠 속에서 떠오르는 불빛이 있다. 그 불빛은 그",
+  "pause_seconds": 62.94,
+  "draft_recovered_before_commit": true,
+  "status": "paused",
+  "error": "읽을 분량을 이어 썼습니다. 원하면 같은 이야기로 계속 읽을 수 있습니다.",
+  "resume_seconds": 174.52,
+  "completed": 1,
+  "prose": "태양계의 한 측면, 지구의 옛날 농장에서 흩어진 김치 발효고리 속. 서연은 흙을 발에 묻히며, 발효조의 흐르는 기운을 느낀다. 그 기운은 흐르는 물처럼 흐르고, 그 안에는 어둠 속에서 떠오르는 불빛이 있다. 그 불빛은 그그 불빛이 서연의 눈에 스치는 순간, 그녀의 손이 갑자기 떨렸다. 흙 속에서 자라난 김치 발효조의 흐름은 그녀의 기억을 흔들었다. 어릴 적 동생이 향을 품은 김치를 조리할 때, 그녀가 느꼈던 따뜻한 냄새. 그 냄새가 지금 이 순간, 무의식 속에서 그녀의 마음을 긁어내며, 그녀는 입을 벌렸다. “내가 기억하는 건, 그 김치의 향이야.” 그 말이 입에 닿자, 흙 위에서 갑자기 흔들리는 김치 발효조가 흐르는 기운을 끊고, 흙이 흐르는 듯이 뒤로 물러섰다.  \n\n서연의 눈이 어두워졌고, 그녀의 손에는 총이 떨어졌다. 그 총은 그녀가 몇 년 전, 우주 무림에서 타인의 기억을 훔치기 위해 사용한 도구였다. 그런데 그 도구가 지금, 그녀의 손에서 떨어져 땅에 떨어졌고, 그 땅은 흙 위에 떨어진 김치 조의 흔적을 보여주었다. 그 흔적이 사라진 동생의 흔적과 정확히 일치했다. 서연은 고개를 끄덕이며, 무릎에 앉아 흙 위를 훑었다. “나는 기억을 훔치지 않겠다는 약속을 지키고 싶다. 그런데 이 김치는, 그 약속을 깨는 방법을 제시하고 있어.” 그녀의 목소리는 흐릿했지만, 그 안에는 무언가를 향해 움직이는 힘이 있었다.",
+  "prose_characters": 690,
+  "original_prefix_preserved": true,
+  "question": "",
+  "evaluation": {
+    "prefix_preservation": "passed",
+    "scope": "Actual local Qwen stream, pause, recovered draft and one completed installment. Multi-installment continuous flow and major-choice stopping are covered by mock-provider integration tests, not this real-model sample.",
+    "quality_notes": [
+      "The resumed text repeats the boundary syllable and contains awkward prose. Exact prefix preservation is not semantic or editorial quality verification.",
+      "The real-model proof used the bounded one-installment API; browser continuous mode uses the same engine without that batch stop."
+    ]
+  }
+}
