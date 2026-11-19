@@ -217,3 +217,44 @@ test("queued request for a previous account is rejected before any HTTP call", a
   );
   assert.equal(calls, 0);
 });
+
+test("AI send prepares all memory batches before its single generation request", async () => {
+  const calls = [];
+  let indexed = 0;
+  const { api } = harness(async (path) => {
+    calls.push(path);
+    if (path.endsWith("/memory/index"))
+      return { status: 200, body: { ready: ++indexed === 2 } };
+    return { status: 200, body: { ai_message: { content: "장면" } } };
+  }, old);
+  await api.restoreSession();
+  await api.requestForUser("alice", "/rooms/book/turns", "POST", {
+    content: "기억해줘",
+  });
+  assert.deepEqual(calls, [
+    "/rooms/book/memory/index",
+    "/rooms/book/memory/index",
+    "/rooms/book/turns",
+  ]);
+});
+
+test("account change during memory preparation prevents generation with the previous story", async () => {
+  let finish;
+  const calls = [];
+  const { api } = harness(async (path) => {
+    calls.push(path);
+    return new Promise(
+      (resolve) =>
+        (finish = () => resolve({ status: 200, body: { ready: true } })),
+    );
+  }, old);
+  await api.restoreSession();
+  const sending = api.requestForUser("alice", "/rooms/book/turns", "POST", {
+    content: "사적인 지시",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await api.clearSession();
+  finish();
+  await assert.rejects(sending, (e) => e.code === "SESSION_CHANGED");
+  assert.deepEqual(calls, ["/rooms/book/memory/index"]);
+});

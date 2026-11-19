@@ -33,16 +33,26 @@ def execute(job):
     try:
         status, data = local(job["path"], job["method"], job.get("body"))
         updates = []
-        if 200 <= status < 300 and job["method"] != "GET":
-            paths = {"/rooms"}
+        if (
+            200 <= status < 300
+            and job["method"] != "GET"
+            and "/memory/" not in job["path"]
+        ):
+            paths = {"/library"}
             m = re.match(r"^/rooms/([A-Za-z0-9-]+)", job["path"])
             if m:
                 paths.update(
-                    {"/rooms/" + m.group(1), "/rooms/" + m.group(1) + "/saves"}
+                    {
+                        "/rooms/" + m.group(1) + "/chapters",
+                        "/rooms/" + m.group(1) + "/saves",
+                    }
                 )
             if isinstance(data, dict) and data.get("narrative_format"):
                 paths.update(
-                    {"/rooms/" + data["id"], "/rooms/" + data["id"] + "/saves"}
+                    {
+                        "/rooms/" + data["id"] + "/chapters",
+                        "/rooms/" + data["id"] + "/saves",
+                    }
                 )
             for path in paths:
                 code, payload = local(path)

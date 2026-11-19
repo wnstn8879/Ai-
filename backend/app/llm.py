@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import HTTPException
+from app.context_budget import window_tokens
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,11 @@ async def complete(messages):
             "messages": messages,
             "stream": False,
             "think": False,
-            "options": {"temperature": 0.8, "num_predict": cfg.tokens, "num_ctx": 8192},
+            "options": {
+                "temperature": 0.8,
+                "num_predict": cfg.tokens,
+                "num_ctx": window_tokens(),
+            },
         }
         if cfg.threads is not None:
             payload["options"]["num_thread"] = cfg.threads

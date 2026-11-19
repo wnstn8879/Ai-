@@ -4,7 +4,7 @@ import hashlib
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 
 from app.database import (
     Base,
@@ -66,7 +66,7 @@ def msgs(db, room_id):
     ).all()
 
 
-def room_out(db, room):
+def room_out(db, room, include_messages=True):
     import json
 
     snapshot = snapshot_at(db, room.id)
@@ -90,7 +90,7 @@ def room_out(db, room):
                 "content": m.content,
                 "created_at": m.created_at,
             }
-            for m in msgs(db, room.id)
+            for m in (msgs(db, room.id) if include_messages else [])
         ],
         "created_at": room.created_at,
     }
@@ -222,12 +222,22 @@ def add_message(
 
 
 def branch(
-    db, parent, index, title, user_id, pinned=None, shared=False, shared_characters=None
+    db,
+    parent,
+    index,
+    title,
+    user_id,
+    pinned=None,
+    shared=False,
+    shared_characters=None,
+    compact=False,
 ):
     lock_room(db, parent.id)
     require_room(db, parent.id, user_id)
-    originals = msgs(db, parent.id)
-    if index > len(originals):
+    total = db.scalar(
+        select(func.count()).select_from(Message).where(Message.room_id == parent.id)
+    )
+    if index > total:
         raise HTTPException(400, "Invalid fork point")
     child = Room(
         id=uid(),
@@ -265,18 +275,37 @@ def branch(
             )
     else:
         db.add(RoomMember(room_id=child.id, user_id=user_id, role="owner"))
-    for i, m in enumerate(originals[:index]):
-        db.add(
-            Message(
-                id=uid(),
-                room_id=child.id,
-                position=i,
-                actor=m.actor,
-                content=m.content,
-                created_at=m.created_at,
+    # Copy only the selected prefix, in bounded batches within the same transaction.
+    for start in range(0, index, 256):
+        originals = db.scalars(
+            select(Message)
+            .where(
+                Message.room_id == parent.id,
+                Message.position >= start,
+                Message.position < min(start + 256, index),
             )
-        )
+            .order_by(Message.position)
+        ).all()
+        if originals:
+            db.execute(
+                Message.__table__.insert(),
+                [
+                    {
+                        "id": uid(),
+                        "room_id": child.id,
+                        "position": m.position,
+                        "actor": m.actor,
+                        "content": m.content,
+                        "created_at": m.created_at,
+                    }
+                    for m in originals
+                ],
+            )
     db.flush()
+    if compact:
+        from app.story_reader import chapter_page
+
+        return chapter_page(db, child)
     return room_out(db, child)
 
 
@@ -294,25 +323,21 @@ def fork_room(room_id: str, data: ForkCreate, user_id: str = Depends(current_use
 
 @app.post("/rooms/{room_id}/rewrite")
 def rewrite_passage(
-    room_id: str, data: PassageRewrite, user_id: str = Depends(current_user)
+    room_id: str,
+    data: PassageRewrite,
+    compact: bool = False,
+    user_id: str = Depends(current_user),
 ):
     with Session.begin() as db:
         parent = require_room(db, room_id, user_id)
         lock_room(db, room_id)
         if parent.narrative_format != "novel":
             raise HTTPException(400, "Passage rewriting requires a novel")
-        messages = msgs(db, room_id)
-        index = next(
-            (
-                i
-                for i, m in enumerate(messages)
-                if m.id == data.message_id and m.actor == "AI"
-            ),
-            None,
-        )
-        if index is None:
+        selected = db.get(Message, data.message_id)
+        if selected is None or selected.room_id != room_id or selected.actor != "AI":
             raise HTTPException(400, "Novel passage not found")
-        source = messages[index].content
+        index = selected.position
+        source = selected.content
         if (
             data.end <= data.start
             or data.end > len(source)
@@ -320,7 +345,7 @@ def rewrite_passage(
             or not data.selected_text.strip()
         ):
             raise HTTPException(400, "Selected passage does not match saved text")
-        result = branch(db, parent, index, data.title, user_id)
+        result = branch(db, parent, index, data.title, user_id, compact=True)
         prefix = source[: data.start]
         if prefix.strip():
             db.add(
@@ -334,6 +359,10 @@ def rewrite_passage(
                 )
             )
             db.flush()
+        if compact:
+            from app.story_reader import chapter_page
+
+            return chapter_page(db, db.get(Room, result["id"]))
         return room_out(db, db.get(Room, result["id"]))
 
 
@@ -414,7 +443,9 @@ def list_saves(room_id: str, user_id: str = Depends(current_user)):
 
 
 @app.post("/saves/{save_id}/resume")
-def resume_save(save_id: str, user_id: str = Depends(current_user)):
+def resume_save(
+    save_id: str, compact: bool = False, user_id: str = Depends(current_user)
+):
     with Session.begin() as db:
         s = db.get(Save, save_id)
         if (
@@ -431,6 +462,7 @@ def resume_save(save_id: str, user_id: str = Depends(current_user)):
             parent.title[:112] + " · 이어하기",
             user_id,
             pinned=db.get(SaveSnapshot, s.id).snapshot_id,
+            compact=compact,
         )
 
 
@@ -445,15 +477,56 @@ async def play_turn(
     room_id: str, data: TurnCreate, user_id: str = Depends(current_user)
 ):
     """Generate before committing both messages; provider failures do not save half a turn."""
-    from app.story_ai import generate_story
+    from app.story_ai import generate_story, plan_story
+    from app.story_memory import index_batch, message_count, recall
 
-    with Session() as db:
+    # Commit only the rebuildable index before generation. Never charge/call the
+    # model while old source records are still waiting to be indexed.
+    with Session.begin() as db:
         require_room(db, room_id, user_id)
+        lock_room(db, room_id)
         cached = receipt(db, room_id, user_id, data)
         if cached is not None:
             return cached
-        room = room_out(db, require_room(db, room_id, user_id))
+        progress = index_batch(db, room_id)
+        room = room_out(db, require_room(db, room_id, user_id), include_messages=False)
+        room["message_count"] = message_count(db, room_id)
+        room["ai_message_count"] = db.scalar(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.room_id == room_id, Message.actor == "AI")
+        )
+        recent = db.scalars(
+            select(Message)
+            .where(Message.room_id == room_id)
+            .order_by(Message.position.desc())
+            .limit(30)
+        ).all()
+        room["messages"] = [
+            {"id": m.id, "position": m.position, "actor": m.actor, "content": m.content}
+            for m in reversed(recent)
+        ]
         actor = player_actor(db, room_id, user_id, data.actor)
+        names = " ".join(c["name"] for c in room["story_state"]["characters"])
+        room["memory_sources"] = recall(
+            db,
+            room_id,
+            data.content + " " + names,
+            before_position=max(0, room["message_count"] - 2),
+            limit=16,
+        )
+
+    if not progress["ready"]:
+        raise HTTPException(
+            409, "과거 기록을 정리하고 있습니다. 기억 정리를 마친 뒤 다시 생성해주세요."
+        )
+    room["prepared_prompt"], context_report = plan_story(
+        room, room["messages"], f"{actor}: {data.content}"
+    )
+    context_report["total_messages"] = room["message_count"]
+    context_report["history_messages_not_in_recent"] = (
+        room["message_count"] - context_report["recent_messages"]
+    )
     reserve_ai_attempt(room_id, user_id)
     reply = await generate_story(room, room["messages"], f"{actor}: {data.content}")
     with Session.begin() as db:
@@ -463,11 +536,11 @@ async def play_turn(
         if cached is not None:
             return cached
         if (
-            len(msgs(db, room_id)) != len(room["messages"])
+            message_count(db, room_id) != room["message_count"]
             or snapshot_at(db, room_id).revision != room["state_revision"]
         ):
             raise HTTPException(409, "Story changed; reload before retrying")
-        position = len(msgs(db, room_id))
+        position = room["message_count"]
         user = Message(
             id=uid(),
             room_id=room_id,
@@ -486,7 +559,10 @@ async def play_turn(
         )
         db.get(RoomMember, (room_id, user_id)).last_played_at = now()
         db.add_all([user, ai])
+        db.flush()
+        index_batch(db, room_id)
         result = {
+            "context_report": context_report,
             "user_message": {
                 "id": user.id,
                 "actor": user.actor,
@@ -586,3 +662,11 @@ def player_actor(db, room_id, user_id, requested):
 
     member = db.get(RoomMember, (room_id, user_id))
     return member.character or db.get(User, user_id).display_name
+
+
+from app.story_memory import router as memory_router
+
+app.include_router(memory_router)
+from app.story_reader import router as reader_router
+
+app.include_router(reader_router)

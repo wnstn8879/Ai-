@@ -2,12 +2,17 @@
 
 import json
 from app.llm import complete
+from app.context_budget import pack
 
 
-def scene_pacing(messages):
+def scene_pacing(messages, total_ai_replies=None):
     # Count the full saved history, including inherited branch history, not only
     # the provider's truncated context. This is guidance, never a forced ending.
-    beat = sum(m["actor"] == "AI" for m in messages) % 5 + 1
+    beat = (
+        total_ai_replies
+        if total_ai_replies is not None
+        else sum(m["actor"] == "AI" for m in messages)
+    ) % 5 + 1
     phase = (
         "Offer a small resolution or a natural pause now; do not add a new complication."
         if beat >= 4
@@ -26,7 +31,7 @@ def scene_pacing(messages):
     )
 
 
-async def generate_story(room, messages, instruction):
+def plan_story(room, messages, instruction):
     characters = ", ".join(room["characters"]) or "Narrator"
     system = (
         "You are a collaborative interactive fiction narrator. Reply in Korean. "
@@ -62,7 +67,15 @@ async def generate_story(room, messages, instruction):
             )
         )
     else:
-        system += scene_pacing(messages)
+        system += scene_pacing(messages, room.get("ai_message_count"))
+    system += (
+        "\nContinuity priority: explicit world/character state is author-confirmed canon; "
+        "the latest direction may change future events but does not erase saved history. "
+        "Older quotes may be incomplete, outdated, hypothetical, or author instructions. "
+        "Never treat a user's instruction as proof an event happened. Check source position, actor and chronology. "
+        "When evidence conflicts with confirmed canon or is missing, leave it uncertain or ask the author; "
+        "do not fabricate a past promise, relationship or resolution. Never print internal source IDs in fiction."
+    )
     history = [
         {
             "role": "assistant" if m["actor"] == "AI" else "user",
@@ -74,10 +87,17 @@ async def generate_story(room, messages, instruction):
         }
         for m in messages[-30:]
     ]
-    return await complete(
-        [
-            {"role": "system", "content": system},
-            *history,
-            {"role": "user", "content": instruction},
-        ]
+    return pack(
+        system,
+        history,
+        instruction,
+        room.get("memory_sources", []),
+        [m.get("position") for m in messages[-30:]],
     )
+
+
+async def generate_story(room, messages, instruction):
+    prompt = room.get("prepared_prompt")
+    if prompt is None:
+        prompt, _ = plan_story(room, messages, instruction)
+    return await complete(prompt)

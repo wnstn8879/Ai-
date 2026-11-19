@@ -232,3 +232,34 @@ test("long generations return durable task ids and repeat submissions reuse the 
   assert.equal(result.done, true);
   assert.equal(result.data.ai_message.content, "새 장면");
 });
+
+test("reader pagination query and memory routes reach authenticated work without exposing another visitor", async () => {
+  const DB = database(),
+    env = { DB, RELAY_KEY: secret };
+  await handle(agent("/relay/poll"), env);
+  const r = await handle(
+    req("/api/rooms/book/chapters?before_position=90", "alice"),
+    env,
+  );
+  assert.equal(r.status, 202);
+  const search = await handle(
+    req("/api/rooms/book/memory/search", "alice", "POST", {
+      query: "은빛 나침반",
+    }),
+    env,
+  );
+  assert.equal(search.status, 202);
+  const jobs = await (await handle(agent("/relay/poll"), env)).json();
+  assert.ok(
+    jobs.jobs.some((j) => j.path === "/rooms/book/chapters?before_position=90"),
+  );
+  assert.equal(
+    (
+      await handle(
+        req("/api/rooms/book/memory/search", null, "POST", { query: "나침반" }),
+        env,
+      )
+    ).status,
+    401,
+  );
+});

@@ -193,6 +193,21 @@ export async function logout() {
   if (expected === generation) await clearSession();
 }
 
-export function requestForUser(userId, path, method = "GET", body) {
+export async function requestForUser(userId, path, method = "GET", body) {
+  if (method === "POST" && /^\/rooms\/[A-Za-z0-9-]+\/turns$/.test(path)) {
+    const memoryPath = path.slice(0, -6) + "/memory/index";
+    let ready = false;
+    for (let batch = 0; batch < 10000; batch++) {
+      const result = await request(memoryPath, "POST", {}, userId);
+      if (result.ready) {
+        ready = true;
+        break;
+      }
+    }
+    if (!ready)
+      throw new Error(
+        "기록 정리가 길어지고 있습니다. 저장된 요청을 확인해주세요.",
+      );
+  }
   return request(path, method, body, userId);
 }

@@ -24,7 +24,7 @@ def test_adopt_legacy_database_preserves_private_records(tmp_path):
         )
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "006_novel_format"
+            == "007_story_memory"
         )
 
 

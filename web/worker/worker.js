@@ -9,7 +9,7 @@ const json = (data, status = 200) =>
     },
   });
 const route =
-  /^\/(rooms(?:\/[A-Za-z0-9-]+(?:\/(?:turns|forks|rewrite|saves|state|members))?)?|saves\/[A-Za-z0-9-]+\/resume)$/;
+  /^\/(library|rooms(?:\/[A-Za-z0-9-]+(?:\/(?:turns|forks|rewrite|saves|state|members|chapters|memory\/(?:index|search)))?)?|saves\/[A-Za-z0-9-]+\/resume)$/;
 const cacheKey = (visitor, path) => JSON.stringify([visitor, path]);
 async function secure(request, env) {
   const key = request.headers.get("x-imagine-relay-key") || "";
@@ -95,7 +95,7 @@ export async function handle(request, env) {
       ];
       for (const item of (body.cache_updates || []).slice(0, 6)) {
         if (
-          !route.test(item.path) ||
+          !route.test(item.path.split("?")[0]) ||
           item.path.includes("/turns") ||
           JSON.stringify(item.data).length > 2000000
         )
@@ -185,8 +185,9 @@ export async function handle(request, env) {
   }
   if (url.pathname.startsWith("/api/")) {
     if (!db) return json({ detail: "저장 서비스를 준비 중입니다." }, 503);
-    const path = url.pathname.slice(4);
-    if (!route.test(path)) return json({ detail: "Not found" }, 404);
+    const path = url.pathname.slice(4) + url.search;
+    if (!route.test(url.pathname.slice(4)))
+      return json({ detail: "Not found" }, 404);
     if (!["GET", "POST", "PUT"].includes(request.method))
       return json({ detail: "Method not allowed" }, 405);
     if (

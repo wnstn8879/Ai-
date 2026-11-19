@@ -143,3 +143,34 @@ class SharedCheckpointRoster(Base):
     __tablename__ = "shared_checkpoint_rosters"
     save_id: Mapped[str] = mapped_column(ForeignKey("saves.id"), primary_key=True)
     characters_json: Mapped[str] = mapped_column(Text)
+
+
+class MemoryCursor(Base):
+    __tablename__ = "memory_cursors"
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), primary_key=True)
+    next_position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class MemoryChunk(Base):
+    __tablename__ = "memory_chunks"
+    __table_args__ = (
+        Index("uq_memory_message_segment", "message_id", "segment", unique=True),
+        Index("ix_memory_room_position", "room_id", "position"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"))
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id"))
+    position: Mapped[int] = mapped_column(Integer)
+    segment: Mapped[int] = mapped_column(Integer)
+    start: Mapped[int] = mapped_column(Integer)
+    end: Mapped[int] = mapped_column(Integer)
+
+
+class MemoryTerm(Base):
+    __tablename__ = "memory_terms"
+    __table_args__ = (Index("ix_memory_room_term", "room_id", "term"),)
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey("memory_chunks.id"), primary_key=True
+    )
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"))
+    term: Mapped[str] = mapped_column(String(66), primary_key=True)
