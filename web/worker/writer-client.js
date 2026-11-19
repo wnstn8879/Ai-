@@ -25,11 +25,12 @@ export function createWriterClient({
   async function consume(next, own) {
     if (own !== epoch) return;
     state = next;
-    onStatus(next);
     if (next.message_count > lastCount) {
-      lastCount = next.message_count;
       await onCommit(next, room);
+      if (own !== epoch) return;
+      lastCount = Math.max(lastCount, next.message_count);
     }
+    if (state === next) onStatus(next);
   }
   async function poll(own) {
     if (own !== epoch || !room) return;
@@ -51,7 +52,12 @@ export function createWriterClient({
     } catch (error) {
       if (own === epoch) onError(error);
     }
-    if (own === epoch && state?.status === "writing" && visible())
+    if (
+      own === epoch &&
+      state &&
+      (state.status === "writing" || state.message_count > lastCount) &&
+      visible()
+    )
       timer = schedule(() => {
         timer = null;
         poll(own);

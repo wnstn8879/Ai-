@@ -103,3 +103,45 @@ test("one-time direction changes active writing without restarting it or automat
   assert.equal(h.timers.size, 0);
   assert.equal(calls.at(-1).path, "/rooms/book/writer/pause");
 });
+
+test("crossroad controls wait for committed text and a failed reader refresh is retried", async () => {
+  let state = idle,
+    reads = 0;
+  const statuses = [],
+    timers = new Map();
+  let key = 0;
+  const client = createWriterClient({
+    api: async () => state,
+    id: () => String(++key),
+    onStatus: (s) => statuses.push(s.status),
+    onError: () => {},
+    onCommit: async () => {
+      reads++;
+      if (reads === 1) throw Error("temporary reader failure");
+    },
+    schedule: (fn) => {
+      timers.set(++key, fn);
+      return key;
+    },
+    cancel: (k) => timers.delete(k),
+  });
+  await client.open("book", 0);
+  state = {
+    ...writing,
+    status: "choice",
+    message_count: 2,
+    question: "갈림길",
+  };
+  // Reopening sees the saved chapter count from the old reader. The choice must
+  // wait until the completed chapter has actually been fetched.
+  await client.open("book", 0);
+  assert.ok(!statuses.includes("choice"));
+  assert.equal(timers.size, 1);
+  const [k, fn] = timers.entries().next().value;
+  timers.delete(k);
+  await fn();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(reads, 2);
+  assert.equal(statuses.at(-1), "choice");
+  assert.equal(timers.size, 0);
+});
